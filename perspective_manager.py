@@ -26,6 +26,8 @@ from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 
+from .core.perspectiveEngine import PerspectiveEngine
+
 from .ui.main_window import MainWindow
 
 
@@ -70,6 +72,9 @@ class PerspectiveManager:
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
         self.first_start = None
+
+        self.main_window = None
+        self.engine      = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):

@@ -1,0 +1,5 @@
+perspectives:
+- file: test.yaml
+  name: Test
+- file: ma_perspective_test.yaml
+  name: Ma perspective test

@@ -1,0 +1,319 @@
+name: Ma perspective test
+plugins:
+  __qgis_native__:
+    docks:
+    - area: left
+      label: Annuler/Refaire
+      name: undo/redo dock
+      visible: false
+    - area: left
+      label: Numérisation avancée
+      name: AdvancedDigitizingTools
+      visible: false
+    - area: left
+      label: Statistiques
+      name: StatisticalSummaryDockWidget
+      visible: false
+    - area: left
+      label: Gestionnaire de signets spatiaux
+      name: BookmarksDockWidget
+      visible: false
+    - area: left
+      label: Éditeur de sommet
+      name: VertexEditor
+      visible: false
+    - area: left
+      label: Couches
+      name: Layers
+      visible: true
+    - area: left
+      label: Ordre des couches
+      name: LayerOrder
+      visible: false
+    - area: left
+      label: Vue d'ensemble
+      name: Overview
+      visible: false
+    - area: left
+      label: Validation de la géométrie
+      name: QgsGeometryValidationDockBase
+      visible: false
+    - area: left
+      label: Style de Couche
+      name: LayerStyling
+      visible: false
+    - area: right
+      label: Outils de débogage/développement
+      name: DevTools
+      visible: false
+    - area: left
+      label: Explorateur
+      name: Browser
+      visible: true
+    - area: top
+      label: Contrôleur temporel
+      name: Temporal Controller
+      visible: false
+    - area: left
+      label: Explorateur (2)
+      name: Browser2
+      visible: false
+    - area: left
+      label: Information GPS
+      name: GPSInformation
+      visible: false
+    - area: bottom
+      label: Journal des messages
+      name: MessageLog
+      visible: false
+    - area: right
+      label: Échelles de tuiles
+      name: theTileScaleDock
+      visible: false
+    - area: bottom
+      label: Console Python
+      name: PythonConsole
+      visible: true
+    toolbars:
+    - area: top
+      label: Projet
+      name: mFileToolBar
+      visible: true
+    - area: left
+      label: Gestion des couches
+      name: mLayerToolBar
+      visible: false
+    - area: top
+      label: Numérisation
+      name: mDigitizeToolBar
+      visible: true
+    - area: top
+      label: Numérisation avancée
+      name: mAdvancedDigitizeToolBar
+      visible: false
+    - area: top
+      label: Navigation cartographique
+      name: mMapNavToolBar
+      visible: true
+    - area: top
+      label: Attributs
+      name: mAttributesToolBar
+      visible: true
+    - area: top
+      label: Extensions
+      name: mPluginToolBar
+      visible: true
+    - area: top
+      label: Aide
+      name: mHelpToolBar
+      visible: true
+    - area: top
+      label: Raster
+      name: mRasterToolBar
+      visible: false
+    - area: top
+      label: Étiquettes
+      name: mLabelToolBar
+      visible: true
+    - area: top
+      label: Vecteur
+      name: mVectorToolBar
+      visible: true
+    - area: top
+      label: Base de données
+      name: mDatabaseToolBar
+      visible: true
+    - area: top
+      label: Internet
+      name: mWebToolBar
+      visible: true
+    - area: top
+      label: Accrochage
+      name: mSnappingToolBar
+      visible: false
+    - area: top
+      label: Gestion des sources de données
+      name: mDataSourceManagerToolBar
+      visible: true
+    - area: top
+      label: Numérisation de formes
+      name: mShapeDigitizeToolBar
+      visible: false
+    - area: top
+      label: Sélection
+      name: mSelectionToolBar
+      visible: true
+    - area: top
+      label: Numérisation de maillage
+      name: mMeshToolBar
+      visible: false
+    - area: top
+      label: Barre d'outils Annotations
+      name: mAnnotationsToolBar
+      visible: false
+    - area: left
+      label: mToolbar
+      name: mToolbar
+      visible: false
+    - area: left
+      label: mBookmarkToolbar
+      name: mBookmarkToolbar
+      visible: false
+    - area: left
+      label: QToolBar
+      name: QToolBar
+      visible: true
+    - area: left
+      label: mToolbar
+      name: mToolbar
+      visible: false
+    - area: left
+      label: mToolbar
+      name: mToolbar
+      visible: false
+    - area: left
+      label: mBrowserToolbar
+      name: mBrowserToolbar
+      visible: true
+    - area: left
+      label: mBrowserToolbar
+      name: mBrowserToolbar
+      visible: false
+    - area: top
+      label: GPS
+      name: mGpsToolBar
+      visible: false
+    - area: left
+      label: processingToolbar
+      name: processingToolbar
+      visible: false
+    - area: left
+      label: QToolBar
+      name: QToolBar
+      visible: true
+    - area: left
+      label: QToolBar
+      name: QToolBar
+      visible: true
+  georelai:
+    docks:
+    - area: left
+      label: Edition des domaines
+      name: domains_edition
+      visible: false
+    - area: left
+      label: Changement de référentiel altimétrique
+      name: altimetric_reference_change
+      visible: false
+    - area: right
+      label: Import des bornes
+      name: import_bornes
+      visible: false
+    - area: right
+      label: Import des points bathy
+      name: import_bathy_point
+      visible: false
+    - area: right
+      label: Création profil points
+      name: import_profil_points
+      visible: false
+    - area: right
+      label: Import profils en long
+      name: import_profil_long_from_files
+      visible: false
+    - area: left
+      label: Edition des profils
+      name: edition_profil
+      visible: false
+    - area: left
+      label: Étendre les traces de profil
+      name: etendre_profil_trace
+      visible: false
+    - area: left
+      label: Création profils point depuis MNT
+      name: compute_profil_point_from_mesh
+      visible: false
+    - area: left
+      label: Mettre à jour les traces de profil
+      name: update_profil_trace
+      visible: false
+    - area: left
+      label: Positionner les sections
+      name: create_sections
+      visible: false
+    - area: right
+      label: Axe auto
+      name: axe_auto
+      visible: false
+    - area: right
+      label: Limites de Thalweg
+      name: thalweg_limits
+      visible: false
+    - area: right
+      label: Limites latérales
+      name: lateral_limits
+      visible: false
+    - area: right
+      label: Limites axe hydraulique
+      name: axe_hydro_limits
+      visible: false
+    - area: right
+      label: Tracer limites
+      name: compute_profil_long
+      visible: false
+    - area: right
+      label: Pré-positionner les limites
+      name: limite_from_profil_long
+      visible: false
+    - area: left
+      label: Calculer PCS
+      name: calcul_casier_loi
+      visible: false
+    - area: left
+      label: Visualiser PCS
+      name: vue_casier_loi
+      visible: false
+    - area: left
+      label: Convertir Trace Seuils 3D
+      name: compute_seuil_point
+      visible: false
+    - area: left
+      label: Construire éléments de seuil
+      name: compute_seuil_elem
+      visible: false
+    - area: left
+      label: Visualiser seuil
+      name: vue_seuil
+      visible: false
+    - area: right
+      label: Créer les emprises de semis de points
+      name: create_emprise
+      visible: false
+    - area: right
+      label: Créer les branches
+      name: create_branch
+      visible: false
+    - area: left
+      label: Export bathy
+      name: export_bathy
+      visible: false
+    - area: bottom
+      label: Logs
+      name: logs
+      visible: false
+    toolbars:
+    - area: top
+      label: GeorelaiToolbar
+      name: GeorelaiToolbar
+      visible: true
+  processing:
+    docks:
+    - area: right
+      label: Visualiseur de Résultats
+      name: ResultsViewer
+      visible: false
+    - area: left
+      label: Boîte à outils de traitements
+      name: ProcessingToolbox
+      visible: false
+    toolbars: []

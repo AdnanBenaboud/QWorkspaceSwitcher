@@ -1,0 +1,8 @@
+name: Test
+plugins:
+  georelai:
+    docks:
+    - area: bottom
+      name: logs
+      visible: false
+    toolbars: []
