@@ -77,6 +77,25 @@ class ConfigIO:
     # PERSPECTIVES
     # ─────────────────────────────────────────
 
+    def create_perspective(self, name: str) -> bool:
+        """
+        Crée un fichier YAML vide pour une nouvelle perspective.
+        Retourne True si succès, False si le nom existe déjà.
+        """
+        # Vérifier que le nom n'existe pas déjà
+        if name in self.list_all():
+            return False
+
+        # Structure vide — pas de docks, pas de toolbars
+        empty_data = {
+            "name":    name,
+            "plugins": {}
+        }
+
+        self.save(name, empty_data)
+        print(f"[ConfigIO] Nouvelle perspective créée : {name}")
+        return True
+
     def load(self, name: str) -> dict:
         """
         Charge une perspective depuis son fichier YAML.
@@ -167,15 +186,23 @@ class ConfigIO:
     # ─────────────────────────────────────────
 
     def _update_index(self, name: str):
-        """Ajoute une perspective à l'index si elle n'y est pas."""
+        """Ajoute une perspective à l'index."""
         index = self.load_index()
         names = [item["name"] for item in index]
+
         if name not in names:
             safe = name.lower().replace(" ", "_")
-            index.append({
+            new_entry = {
                 "name": name,
                 "file": f"{safe}.yaml"
-            })
+            }
+
+            # La perspective QGIS toujours en premier
+            if name == "QGIS":
+                index.insert(0, new_entry)
+            else:
+                index.append(new_entry)
+
             self.save_index(index)
 
     def _remove_from_index(self, name: str):

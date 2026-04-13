@@ -1,4 +1,4 @@
-name: test
+name: test - copie
 plugins:
   PostTelemac:
     docks: []

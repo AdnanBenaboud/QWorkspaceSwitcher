@@ -10,6 +10,9 @@ from ..applicators.dock_applicator import DockApplicator
 from ..applicators.toolbar_applicator import ToolbarApplicator
 from ..applicators.state_capture import StateCapture
 
+from .plugin_discovery import is_valid
+
+
 
 class PerspectiveEngine(QObject):
     """
@@ -37,20 +40,39 @@ class PerspectiveEngine(QObject):
     # ─────────────────────────────────────────
     # INITIALISATION
     # ─────────────────────────────────────────
+    DEFAULT_PERSPECTIVE_NAME = "QGIS"
 
     def initialize(self):
         """
-        À appeler au démarrage du plugin.
-        Lance le scan des plugins et construit le registre.
+        Initialise le moteur :
+        1. Scanne les plugins
+        2. Instancie les applicateurs
+        3. Crée la perspective QGIS par défaut si elle n'existe pas
         """
         self.registry = self.discovery.scan()
 
-        # Instancier les applicateurs APRÈS le scan
         self.dock_applicator    = DockApplicator(self.discovery)
         self.toolbar_applicator = ToolbarApplicator(self.discovery)
         self.state_capture      = StateCapture(self.discovery)
 
-        print(f"[Engine] Registre construit — {len(self.registry)} plugins détectés")
+        # Créer la perspective par défaut si première utilisation
+        self._ensure_default_perspective()
+
+        print(f"[Engine] {len(self.registry)} plugins détectés")
+
+    def _ensure_default_perspective(self):
+        """
+        Crée la perspective 'QGIS' par défaut
+        si elle n'existe pas encore.
+        Capture l'état actuel au premier démarrage.
+        """
+        if self.DEFAULT_PERSPECTIVE_NAME in self.config_io.list_all():
+            return  # ← déjà créée — ne pas écraser
+
+        print("[Engine] Création de la perspective QGIS par défaut...")
+        data = self.state_capture.capture(self.DEFAULT_PERSPECTIVE_NAME)
+        self.config_io.save(self.DEFAULT_PERSPECTIVE_NAME, data)
+        print("[Engine] Perspective QGIS par défaut créée ✓")
 
     # ─────────────────────────────────────────
     # PERSPECTIVES — LISTE
@@ -64,31 +86,104 @@ class PerspectiveEngine(QObject):
     # PERSPECTIVES — APPLIQUER
     # ─────────────────────────────────────────
 
+    def add_perspective(self, name: str) -> bool:
+        """
+        Crée une nouvelle perspective avec l'état actuel
+        de QGIS comme point de départ.
+        """
+        if name in self.config_io.list_all():
+            return False
+
+        # Rescanner avant de capturer — garantit des références valides
+        self.registry = self.discovery.scan()
+        self.state_capture = StateCapture(self.discovery)
+
+        data = self.state_capture.capture(name)
+        self.config_io.save(name, data)
+        print(f"[Engine] Nouvelle perspective créée : {name}")
+        return True
+        
+    # ─────────────────────────────────────────
+    # PERSPECTIVES — APPLIQUER
+    # ─────────────────────────────────────────
+
     def apply(self, name: str):
         """
         Charge et applique une perspective par son nom.
         Émet perspectiveChanged si succès.
         """
+        # Rescanner
+        self.registry = self.discovery.scan()
+        self.dock_applicator    = DockApplicator(self.discovery)
+        self.toolbar_applicator = ToolbarApplicator(self.discovery)
+        self.state_capture      = StateCapture(self.discovery)
+
         data = self.config_io.load(name)
         if not data:
+            print(f"[Engine] Perspective introuvable : {name}")
             return
 
         main_win = iface.mainWindow()
         main_win.setUpdatesEnabled(False)
+
         try:
+            # ── Passe 1 — Cacher tout ─────────────
+            self._hide_all()
+
+            # ── Passe 2 — Appliquer les docks ─────
             for plugin_name, plugin_data in data.get("plugins", {}).items():
                 self.dock_applicator.apply(
                     plugin_name,
                     plugin_data.get("docks", [])
                 )
-                self.toolbar_applicator.apply(
-                    plugin_name,
-                    plugin_data.get("toolbars", [])
-                )
+
+            # ── Passe 3 — Appliquer les toolbars ──
+            # Collecter toutes les toolbars de tous les plugins
+            all_toolbars = {
+                plugin_name: plugin_data.get("toolbars", [])
+                for plugin_name, plugin_data in data.get("plugins", {}).items()
+            }
+            # Appliquer en une seule passe avec gestion des lignes
+            self.toolbar_applicator.apply_all(all_toolbars)
+
             self.current_perspective = name
             self.perspectiveChanged.emit(name)
+            print(f"[Engine] Perspective appliquée : {name}")
+
+        except Exception as e:
+            print(f"[Engine] Erreur : {e}")
+
         finally:
             main_win.setUpdatesEnabled(True)
+
+    def _hide_all(self):
+        """
+        Cache tous les docks et toolbars connus dans le registre.
+        Exclut la toolbar du plugin lui-même.
+        """
+        EXCLUDED_TOOLBARS = ["PerspectiveManagerToolbar"]
+
+        for plugin_data in self.registry.values():
+
+            for dock_info in plugin_data.get("docks", []):
+                dock = dock_info["object"]
+                if not is_valid(dock):
+                    continue
+                try:
+                    dock.setVisible(False)
+                except RuntimeError:
+                    pass
+
+            for tb_info in plugin_data.get("toolbars", []):
+                tb = tb_info["object"]
+                if tb_info["name"] in EXCLUDED_TOOLBARS:
+                    continue
+                if not is_valid(tb):
+                    continue
+                try:
+                    tb.setVisible(False)
+                except RuntimeError:
+                    pass
 
     # ─────────────────────────────────────────
     # PERSPECTIVES — SAUVEGARDER

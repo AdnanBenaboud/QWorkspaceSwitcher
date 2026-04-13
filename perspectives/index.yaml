@@ -1,5 +1,11 @@
 perspectives:
+- file: qgis.yaml
+  name: QGIS
 - file: test.yaml
-  name: Test
-- file: ma_perspective_test.yaml
-  name: Ma perspective test
+  name: test
+- file: test2.yaml
+  name: test2
+- file: test2_-_copie.yaml
+  name: test2 - copie
+- file: test_-_copie.yaml
+  name: test - copie

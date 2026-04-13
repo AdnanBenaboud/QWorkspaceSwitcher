@@ -3,6 +3,19 @@ from qgis.PyQt.QtCore import Qt
 from qgis.utils import plugins, iface
 
 
+
+# ── FONCTION UTILITAIRE ──────────────
+def is_valid(widget) -> bool:
+    """
+    Vérifie si un objet Qt est encore valide en mémoire.
+    Retourne False si l'objet C++ a été supprimé.
+    """
+    try:
+        widget.objectName()
+        return True
+    except RuntimeError:
+        return False
+
 class PluginDiscovery:
 
     def __init__(self):

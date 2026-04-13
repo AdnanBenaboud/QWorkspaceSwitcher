@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>954</width>
+    <width>1242</width>
     <height>643</height>
    </rect>
   </property>
@@ -16,6 +16,9 @@
   <layout class="QHBoxLayout" name="horizontalLayout">
    <item>
     <layout class="QVBoxLayout" name="verticalLayout">
+     <property name="sizeConstraint">
+      <enum>QLayout::SetMinimumSize</enum>
+     </property>
      <item>
       <widget class="QLabel" name="label">
        <property name="font">
@@ -31,26 +34,30 @@
       </widget>
      </item>
      <item>
-      <widget class="QListWidget" name="listWidget"/>
+      <widget class="QListWidget" name="listPerspectives">
+       <property name="resizeMode">
+        <enum>QListView::Fixed</enum>
+       </property>
+      </widget>
      </item>
      <item>
       <layout class="QHBoxLayout" name="horizontalLayout_5" stretch="0,0,0">
        <item>
-        <widget class="QPushButton" name="pushButton_2">
+        <widget class="QPushButton" name="btnAdd">
          <property name="text">
           <string>+ Nouveau</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="pushButton_3">
+        <widget class="QPushButton" name="btnDuplicate">
          <property name="text">
           <string>Duppliquer</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="pushButton">
+        <widget class="QPushButton" name="btnDelete">
          <property name="text">
           <string>Supprimer</string>
          </property>
@@ -63,10 +70,10 @@
    <item>
     <layout class="QVBoxLayout" name="verticalLayout_2">
      <item>
-      <widget class="QLineEdit" name="lineEdit"/>
+      <widget class="QLineEdit" name="inputName"/>
      </item>
      <item>
-      <widget class="QPushButton" name="pushButton_7">
+      <widget class="QPushButton" name="btnCapture">
        <property name="text">
         <string>Capturer l'état actuel</string>
        </property>
@@ -83,28 +90,7 @@
         </attribute>
         <layout class="QVBoxLayout" name="verticalLayout_3">
          <item>
-          <widget class="QTreeWidget" name="treeWidget">
-           <column>
-            <property name="text">
-             <string notr="true">Nom</string>
-            </property>
-           </column>
-           <column>
-            <property name="text">
-             <string>Nouvelle colonne</string>
-            </property>
-           </column>
-           <column>
-            <property name="text">
-             <string>Zone</string>
-            </property>
-           </column>
-           <column>
-            <property name="text">
-             <string>Visible</string>
-            </property>
-           </column>
-          </widget>
+          <widget class="QTreeWidget" name="treeDocks"/>
          </item>
         </layout>
        </widget>
@@ -116,28 +102,7 @@
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_3">
            <item>
-            <widget class="QTreeWidget" name="treeWidget_2">
-             <column>
-              <property name="text">
-               <string notr="true">Nom</string>
-              </property>
-             </column>
-             <column>
-              <property name="text">
-               <string>Type</string>
-              </property>
-             </column>
-             <column>
-              <property name="text">
-               <string>Zone</string>
-              </property>
-             </column>
-             <column>
-              <property name="text">
-               <string>Visible</string>
-              </property>
-             </column>
-            </widget>
+            <widget class="QTreeWidget" name="treeToolbars"/>
            </item>
           </layout>
          </item>
@@ -145,28 +110,40 @@
        </widget>
       </widget>
      </item>
+     <item>
+      <widget class="QLabel" name="labelPlaceholder">
+       <property name="font">
+        <font>
+         <pointsize>11</pointsize>
+        </font>
+       </property>
+       <property name="layoutDirection">
+        <enum>Qt::LeftToRight</enum>
+       </property>
+       <property name="text">
+        <string>Sélectionne une perspective
+ou crée-en une nouvelle  ✚</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignCenter</set>
+       </property>
+      </widget>
+     </item>
     </layout>
    </item>
    <item>
     <layout class="QVBoxLayout" name="verticalLayout_5">
      <item>
-      <widget class="QPushButton" name="pushButton_5">
+      <widget class="QPushButton" name="btnApply">
        <property name="text">
         <string>Appliquer</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="pushButton_6">
+      <widget class="QPushButton" name="btnSave">
        <property name="text">
         <string>Sauvegarder</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="pushButton_4">
-       <property name="text">
-        <string>Supprimer</string>
        </property>
       </widget>
      </item>

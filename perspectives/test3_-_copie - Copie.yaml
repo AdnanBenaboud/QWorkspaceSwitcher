@@ -1,11 +1,11 @@
-name: test
+name: test3 - copie
 plugins:
   PostTelemac:
     docks: []
     toolbars:
     - area: top
       label: Telemac
-      line: 1
+      line: 3
       name: Telemac
       visible: false
   __qgis_native__:
@@ -33,7 +33,7 @@ plugins:
     - area: left
       label: Couches
       name: Layers
-      visible: false
+      visible: true
     - area: left
       label: Ordre des couches
       name: LayerOrder
@@ -57,7 +57,7 @@ plugins:
     - area: left
       label: Explorateur
       name: Browser
-      visible: false
+      visible: true
     - area: top
       label: Contrôleur temporel
       name: Temporal Controller
@@ -87,7 +87,7 @@ plugins:
       label: Projet
       line: 1
       name: mFileToolBar
-      visible: false
+      visible: true
     - area: left
       label: Gestion des couches
       line: 1
@@ -97,7 +97,7 @@ plugins:
       label: Numérisation
       line: 2
       name: mDigitizeToolBar
-      visible: false
+      visible: true
     - area: top
       label: Numérisation avancée
       line: 2
@@ -107,22 +107,22 @@ plugins:
       label: Navigation cartographique
       line: 1
       name: mMapNavToolBar
-      visible: false
+      visible: true
     - area: top
       label: Attributs
       line: 1
       name: mAttributesToolBar
-      visible: false
+      visible: true
     - area: top
       label: Extensions
       line: 2
       name: mPluginToolBar
-      visible: false
+      visible: true
     - area: top
       label: Aide
       line: 2
       name: mHelpToolBar
-      visible: false
+      visible: true
     - area: top
       label: Raster
       line: 3
@@ -132,12 +132,12 @@ plugins:
       label: Étiquettes
       line: 2
       name: mLabelToolBar
-      visible: false
+      visible: true
     - area: top
       label: Vecteur
       line: 2
       name: mVectorToolBar
-      visible: false
+      visible: true
     - area: top
       label: Base de données
       line: 3
@@ -147,7 +147,7 @@ plugins:
       label: Internet
       line: 2
       name: mWebToolBar
-      visible: false
+      visible: true
     - area: top
       label: Accrochage
       line: 3
@@ -157,7 +157,7 @@ plugins:
       label: Gestion des sources de données
       line: 2
       name: mDataSourceManagerToolBar
-      visible: false
+      visible: true
     - area: top
       label: Numérisation de formes
       line: 3
@@ -167,7 +167,7 @@ plugins:
       label: Sélection
       line: 1
       name: mSelectionToolBar
-      visible: false
+      visible: true
     - area: top
       label: Numérisation de maillage
       line: 3
@@ -223,11 +223,6 @@ plugins:
       line: 1
       name: processingToolbar
       visible: false
-    - area: top
-      label: Gestionnaire de Perspectives
-      line: 3
-      name: PerspectiveManagerToolbar
-      visible: false
     - area: left
       label: Barre d'outil
       line: 1
@@ -243,16 +238,21 @@ plugins:
       line: 1
       name: QToolBar
       visible: false
+    - area: top
+      label: Gestionnaire de Perspectives
+      line: 3
+      name: PerspectiveManagerToolbar
+      visible: false
   georelai:
     docks:
     - area: right
       label: Edition des domaines
       name: domains_edition
-      visible: true
+      visible: false
     - area: right
       label: Changement de référentiel altimétrique
       name: altimetric_reference_change
-      visible: true
+      visible: false
     - area: right
       label: Import des bornes
       name: import_bornes
@@ -273,10 +273,10 @@ plugins:
       label: Edition des profils
       name: edition_profil
       visible: false
-    - area: bottom
+    - area: left
       label: Étendre les traces de profil
       name: etendre_profil_trace
-      visible: true
+      visible: false
     - area: left
       label: Création profils point depuis MNT
       name: compute_profil_point_from_mesh
@@ -371,15 +371,15 @@ plugins:
     - area: right
       label: Create Mesh
       name: Create Mesh
-      visible: true
+      visible: false
     - area: right
       label: Cut Mesh
       name: Cut Mesh
-      visible: true
+      visible: false
     - area: right
       label: Extend Mesh
       name: Extend Mesh
-      visible: true
+      visible: false
     - area: right
       label: Interpolation point cloud
       name: Interpolation point cloud
@@ -391,7 +391,7 @@ plugins:
     - area: right
       label: Projection field
       name: Projection field
-      visible: false
+      visible: true
     - area: right
       label: Refine
       name: Refine
@@ -399,7 +399,7 @@ plugins:
     - area: right
       label: Mesh transform
       name: Mesh transform
-      visible: false
+      visible: true
     - area: right
       label: Friction table edition
       name: Friction table edition
@@ -407,5 +407,5 @@ plugins:
     - area: right
       label: Create Boundary
       name: Create Boundary
-      visible: false
+      visible: true
     toolbars: []
