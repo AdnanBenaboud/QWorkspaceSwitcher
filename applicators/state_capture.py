@@ -7,9 +7,18 @@ class StateCapture:
     """
     Photographie l'état courant de l'interface QGIS.
     """
+    """
+    Photographie l'état courant de l'interface QGIS.
+    """
     EXCLUDED_TOOLBARS = [
-        "PerspectiveManagerToolbar",  # notre plugin
-        "QToolBar",                   # nom de classe générique
+        "QToolBar",                    # nom de classe générique
+        # Toolbars liées à des docks — gérées automatiquement par signal
+        #"mLayerToolBar",
+        "mBrowserToolbar",
+        "mAdvancedDigitizeToolBar",
+        "mGpsToolBar",
+        "mBookmarkToolbar",
+        "processingToolbar",
     ]
 
     def __init__(self, discovery):

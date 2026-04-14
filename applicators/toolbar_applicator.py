@@ -4,6 +4,23 @@ from qgis.utils import iface
 from ..core.plugin_discovery import is_valid
 
 
+# Toolbars à ne jamais repositionner
+EXCLUDED_TOOLBARS = {
+    "PerspectiveManagerToolbar",  # ← notre plugin
+    "QToolBar",                   # ← sans nom
+}
+
+# Toolbars liées à des docks — gérées automatiquement par signal Qt
+LINKED_TOOLBARS = {
+    #"mLayerToolBar",
+    "mBrowserToolbar",
+    "mAdvancedDigitizeToolBar",
+    "mGpsToolBar",
+    "mBookmarkToolbar",
+    "processingToolbar",
+}
+
+
 class ToolbarApplicator:
 
     AREA_MAP = {
@@ -23,13 +40,18 @@ class ToolbarApplicator:
         main_win = iface.mainWindow()
 
         for tb_cfg in toolbars_config:
-            toolbar = self._find(tb_cfg["name"])
-
-            if toolbar is None or not is_valid(toolbar):
-                print(f"[ToolbarApplicator] Toolbar ignorée : {tb_cfg['name']}")
+            # Skip toolbars exclues
+            if tb_cfg["name"] in EXCLUDED_TOOLBARS:
                 continue
 
-            # Cacher les toolbars non visibles maintenant
+            # Skip toolbars liées — gérées par leur dock
+            if tb_cfg["name"] in LINKED_TOOLBARS:
+                continue
+
+            toolbar = self._find(tb_cfg["name"])
+            if toolbar is None or not is_valid(toolbar):
+                continue
+
             if not tb_cfg.get("visible", True):
                 toolbar.setVisible(False)
 
@@ -37,20 +59,21 @@ class ToolbarApplicator:
         """
         Applique TOUTES les toolbars de tous les plugins
         en respectant les zones et les lignes.
-
-        all_toolbars_by_plugin = {
-            "plugin_name": [ {name, visible, area, line}, ... ]
-        }
         """
-        main_win = iface.mainWindow()
-
-        # ── Étape 1 — Collecter toutes les toolbars visibles ──
-        # Grouper par zone puis par ligne
-        # { "top": { 1: [tb1, tb2], 2: [tb3] }, ... }
+        main_win   = iface.mainWindow()
         area_lines = {}
 
         for plugin_name, toolbars_config in all_toolbars_by_plugin.items():
             for tb_cfg in toolbars_config:
+
+                # Skip toolbars exclues — ne jamais repositionner
+                if tb_cfg["name"] in EXCLUDED_TOOLBARS:
+                    continue
+
+                # Skip toolbars liées — gérées par leur dock
+                if tb_cfg["name"] in LINKED_TOOLBARS:
+                    continue
+
                 if not tb_cfg.get("visible", True):
                     continue
 
@@ -71,9 +94,16 @@ class ToolbarApplicator:
                     "config":  tb_cfg,
                 })
 
-        # ── Étape 2 — Retirer toutes les toolbars ─────────────
-        # Qt ne peut pas repositionner une toolbar déjà placée
-        # sans la retirer d'abord
+        # ── Sauvegarder position PerspectiveManagerToolbar ──
+        pm_toolbar = None
+        pm_area    = Qt.TopToolBarArea
+        for tb in main_win.findChildren(QToolBar):
+            if tb.objectName() == "PerspectiveManagerToolbar":
+                pm_toolbar = tb
+                pm_area    = main_win.toolBarArea(tb)
+                break
+
+        # ── Retirer toutes les toolbars à repositionner ──────
         all_toolbars = set()
         for area_data in area_lines.values():
             for line_data in area_data.values():
@@ -84,30 +114,27 @@ class ToolbarApplicator:
             if is_valid(tb):
                 main_win.removeToolBar(tb)
 
-        # ── Étape 3 — Replacer dans le bon ordre ──────────────
+        # ── Replacer dans le bon ordre ────────────────────────
         for area_str, lines in area_lines.items():
             area = self.AREA_MAP.get(area_str, Qt.TopToolBarArea)
-
             for line_num in sorted(lines.keys()):
                 toolbars_in_line = lines[line_num]
-
                 for idx, entry in enumerate(toolbars_in_line):
                     toolbar = entry["toolbar"]
-
                     if not is_valid(toolbar):
                         continue
-
-                    # Ajouter dans la zone
                     main_win.addToolBar(area, toolbar)
-
-                    # Saut de ligne avant la première toolbar
-                    # de chaque nouvelle ligne (sauf ligne 1)
                     if idx == 0 and line_num > 1:
                         main_win.insertToolBarBreak(toolbar)
-
                     toolbar.setVisible(True)
 
+        # ── Restaurer position PerspectiveManagerToolbar ──────
+        if pm_toolbar and is_valid(pm_toolbar):
+            main_win.addToolBar(pm_area, pm_toolbar)
+            pm_toolbar.setVisible(True)
+
     def _find(self, name: str):
+        """Cherche une QToolBar par son nom dans le registre."""
         registry = self.discovery.registry
         for plugin_data in registry.values():
             for tb_info in plugin_data.get("toolbars", []):

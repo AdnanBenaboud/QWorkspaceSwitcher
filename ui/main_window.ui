@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1242</width>
-    <height>643</height>
+    <width>1749</width>
+    <height>833</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -80,6 +80,34 @@
       </widget>
      </item>
      <item>
+      <layout class="QHBoxLayout" name="horizontalLayout_6">
+       <item>
+        <widget class="QCheckBox" name="checkBox_icon">
+         <property name="text">
+          <string>Ajouter une icone</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="comboBox_emplacement"/>
+       </item>
+       <item>
+        <widget class="QPushButton" name="pushButton_importIcon">
+         <property name="text">
+          <string>Choisir l'icone</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="checkBox_menuBar">
+       <property name="text">
+        <string>Barre de Menu Principale de QGIS</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QTabWidget" name="tabWidget">
        <property name="currentIndex">
         <number>0</number>
@@ -90,7 +118,13 @@
         </attribute>
         <layout class="QVBoxLayout" name="verticalLayout_3">
          <item>
-          <widget class="QTreeWidget" name="treeDocks"/>
+          <widget class="QTreeWidget" name="treeDocks">
+           <column>
+            <property name="text">
+             <string notr="true">1</string>
+            </property>
+           </column>
+          </widget>
          </item>
         </layout>
        </widget>
@@ -102,9 +136,42 @@
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_3">
            <item>
-            <widget class="QTreeWidget" name="treeToolbars"/>
+            <widget class="QTreeWidget" name="treeToolbars">
+             <column>
+              <property name="text">
+               <string notr="true">1</string>
+              </property>
+             </column>
+            </widget>
            </item>
           </layout>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="tab_3">
+        <attribute name="title">
+         <string>Menus</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="verticalLayout_6">
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_2">
+           <item>
+            <widget class="QCheckBox" name="checkBox_ajoutMenu">
+             <property name="text">
+              <string>Ajouter un menu</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <widget class="QTreeWidget" name="treeWidget_menu">
+           <column>
+            <property name="text">
+             <string notr="true">1</string>
+            </property>
+           </column>
+          </widget>
          </item>
         </layout>
        </widget>
@@ -144,6 +211,13 @@ ou crée-en une nouvelle  ✚</string>
       <widget class="QPushButton" name="btnSave">
        <property name="text">
         <string>Sauvegarder</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="pushButton_expor_perspectives">
+       <property name="text">
+        <string>Exporter la configuration des perspectives</string>
        </property>
       </widget>
      </item>

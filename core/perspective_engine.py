@@ -13,6 +13,20 @@ from ..applicators.state_capture import StateCapture
 from .plugin_discovery import is_valid
 
 
+LINKED_TOOLBARS = {
+    #"mLayerToolBar",
+    "mBrowserToolbar", 
+    "mAdvancedDigitizeToolBar",
+    "mGpsToolBar",
+    "mBookmarkToolbar",
+    "processingToolbar",
+}
+
+EXCLUDED_TOOLBARS = {
+    "PerspectiveManagerToolbar",
+    "QToolBar",
+}
+
 
 class PerspectiveEngine(QObject):
     """
@@ -57,8 +71,20 @@ class PerspectiveEngine(QObject):
 
         # Créer la perspective par défaut si première utilisation
         self._ensure_default_perspective()
+        self._connect_dock_toolbar_links()
+
+        # ── Écouter les changements du fichier JSON ──
+        self.config_io.configChanged.connect(self._on_config_changed)
 
         print(f"[Engine] {len(self.registry)} plugins détectés")
+
+    def _on_config_changed(self):
+        """
+        Appelé quand le fichier JSON est modifié depuis l'extérieur.
+        Émet un signal pour rafraîchir l'UI.
+        """
+        print("[Engine] Configuration rechargée depuis le fichier")
+        self.perspectiveChanged.emit("__reload__")
 
     def _ensure_default_perspective(self):
         """
@@ -113,7 +139,7 @@ class PerspectiveEngine(QObject):
         Émet perspectiveChanged si succès.
         """
         # Rescanner
-        self.registry = self.discovery.scan()
+        self.registry           = self.discovery.scan()
         self.dock_applicator    = DockApplicator(self.discovery)
         self.toolbar_applicator = ToolbarApplicator(self.discovery)
         self.state_capture      = StateCapture(self.discovery)
@@ -138,13 +164,15 @@ class PerspectiveEngine(QObject):
                 )
 
             # ── Passe 3 — Appliquer les toolbars ──
-            # Collecter toutes les toolbars de tous les plugins
             all_toolbars = {
                 plugin_name: plugin_data.get("toolbars", [])
                 for plugin_name, plugin_data in data.get("plugins", {}).items()
             }
-            # Appliquer en une seule passe avec gestion des lignes
             self.toolbar_applicator.apply_all(all_toolbars)
+
+            # ── Passe 4 — Barre de menus ──────────
+            show_menu_bar = data.get("show_menu_bar", True)
+            iface.mainWindow().menuBar().setVisible(show_menu_bar)
 
             self.current_perspective = name
             self.perspectiveChanged.emit(name)
@@ -157,27 +185,36 @@ class PerspectiveEngine(QObject):
             main_win.setUpdatesEnabled(True)
 
     def _hide_all(self):
-        """
-        Cache tous les docks et toolbars connus dans le registre.
-        Exclut la toolbar du plugin lui-même.
-        """
-        EXCLUDED_TOOLBARS = ["PerspectiveManagerToolbar"]
+        """Cache tous les docks et toolbars — respecte les liaisons."""
+        from .plugin_discovery import is_valid
 
         for plugin_data in self.registry.values():
 
+            # ── Cacher les docks ──────────────────
             for dock_info in plugin_data.get("docks", []):
                 dock = dock_info["object"]
                 if not is_valid(dock):
                     continue
                 try:
                     dock.setVisible(False)
+                    # ← les toolbars liées suivent automatiquement
+                    #   via visibilityChanged connecté dans
+                    #   _connect_dock_toolbar_links()
                 except RuntimeError:
                     pass
 
+            # ── Cacher les toolbars ───────────────
             for tb_info in plugin_data.get("toolbars", []):
                 tb = tb_info["object"]
+
+                # Skip toolbar du plugin
                 if tb_info["name"] in EXCLUDED_TOOLBARS:
                     continue
+
+                # Skip toolbars liées — gérées par leur dock
+                if tb_info["name"] in LINKED_TOOLBARS:
+                    continue
+
                 if not is_valid(tb):
                     continue
                 try:
@@ -331,3 +368,58 @@ class PerspectiveEngine(QObject):
     def get_current_perspective(self) -> str:
         """Retourne le nom de la perspective active."""
         return self.current_perspective
+    
+
+    # ─────────────────────────────────────────
+    # LIAISON DOCK ↔ TOOLBAR  ← ajouter ici
+    # ─────────────────────────────────────────
+
+    def _connect_dock_toolbar_links(self):
+        from qgis.PyQt.QtWidgets import QDockWidget, QToolBar
+        from qgis.utils import iface
+
+        main_win = iface.mainWindow()
+
+        LINKS = {
+            #"Layers":                  "mLayerToolBar",
+            "Browser":                 "mBrowserToolbar",
+            "Browser2":                "mBrowserToolbar",
+            "AdvancedDigitizingTools": "mAdvancedDigitizeToolBar",
+            "GPSInformation":          "mGpsToolBar",
+            "BookmarksDockWidget":     "mBookmarkToolbar",
+            "ProcessingToolbox":       "processingToolbar",
+        }
+
+        # Index toolbars — première occurrence uniquement
+        toolbar_index = {}
+        for tb in main_win.findChildren(QToolBar):
+            name = tb.objectName()
+            if name and name not in toolbar_index:
+                toolbar_index[name] = tb
+
+        # Index docks
+        dock_index = {}
+        for dock in main_win.findChildren(QDockWidget):
+            name = dock.objectName()
+            if name and name not in dock_index:
+                dock_index[name] = dock
+
+        # Connecter les liaisons
+        for dock_name, toolbar_name in LINKS.items():
+            dock    = dock_index.get(dock_name)
+            toolbar = toolbar_index.get(toolbar_name)
+
+            if dock and toolbar:
+                try:
+                    dock.visibilityChanged.disconnect()
+                except Exception:
+                    pass
+                dock.visibilityChanged.connect(
+                    lambda visible, tb=toolbar: tb.setVisible(visible)
+                )
+                print(f"[Engine] Lien : {dock_name} → {toolbar_name}")
+            else:
+                if not dock:
+                    print(f"[Engine] Dock introuvable : {dock_name}")
+                if not toolbar:
+                    print(f"[Engine] Toolbar introuvable : {toolbar_name}")
