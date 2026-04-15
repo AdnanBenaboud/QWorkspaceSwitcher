@@ -1,18 +1,77 @@
+# coding: utf-8
+
+"""
+Module principal du plugin QGIS Gestionnaire de Perspectives.
+
+Ce module fournit la classe :class:`PerspectiveManager`, point d'entrée
+du plugin QGIS. Elle gère le cycle de vie du plugin (initialisation,
+interface graphique, déchargement) et la toolbar de perspectives.
+
+**Structure de la toolbar :**
+
+.. code-block:: text
+
+    ┌────────────────────────────────────────────────────┐
+    │ [⚙] │ | │ [QGIS] │ [Saisie terrain ▼] │ [Maillage] │
+    └────────────────────────────────────────────────────┘
+      │         │              │                    │
+    Ouvrir    Sépa-        Bouton simple      Bouton plugin
+    MainWindow rateur      (pas de menu)      (avec menu ▼)
+
+**Fichier de configuration :**
+
+- ``perspectives/user.psp.json`` — perspectives utilisateur.
+- ``<plugin>/<plugin>.psp.json`` — perspectives déclarées par les plugins.
+
+:author: Adnan Benaboud — CNR
+"""
+
 import os
+
 from qgis.PyQt.QtWidgets import (
     QAction, QToolBar, QToolButton,
-    QMenu, QLabel, QInputDialog, QMessageBox
+    QMenu, QInputDialog, QMessageBox
 )
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt
+
 from .core.perspective_engine import PerspectiveEngine
 from .core.plugin_discovery import is_valid
 from .ui.main_window import MainWindow
 
 
 class PerspectiveManager:
+    """
+    Point d'entrée du plugin QGIS Gestionnaire de Perspectives.
+
+    Gère le cycle de vie du plugin, la toolbar QGIS et la
+    synchronisation entre l'interface utilisateur et le moteur.
+
+    **Responsabilités :**
+
+    - Initialiser et décharger le plugin (``initGui`` / ``unload``).
+    - Créer et maintenir la toolbar ``PerspectiveManagerToolbar``.
+    - Créer un bouton :class:`QToolButton` par perspective.
+    - Ouvrir :class:`~perspective_manager.ui.main_window.MainWindow`
+      à la demande.
+    - Rafraîchir la toolbar lors des modifications de configuration.
+
+    :exemple:
+
+    .. code-block:: python
+
+        # Appelé automatiquement par QGIS au chargement du plugin
+        manager = PerspectiveManager(iface)
+        manager.initGui()
+    """
 
     def __init__(self, iface):
+        """
+        Initialise le gestionnaire avec l'interface QGIS.
+
+        :param iface: Interface QGIS principale.
+        :type iface: QgisInterface
+        """
         self.iface               = iface
         self.plugin_dir          = os.path.dirname(__file__)
         self.first_start         = True
@@ -23,13 +82,27 @@ class PerspectiveManager:
         self.perspective_buttons = {}
 
     def initGui(self):
+        """
+        Initialise l'interface graphique du plugin.
+
+        - Crée et initialise le :class:`PerspectiveEngine`.
+        - Crée la toolbar ``PerspectiveManagerToolbar``.
+        - Ajoute l'action d'ouverture de la :class:`MainWindow`.
+        - Crée les boutons de perspectives via :meth:`_refresh_toolbar`.
+        - Connecte les signaux de changement de perspective et de
+          modification de configuration.
+        - Installe le raccourci ``Ctrl+Shift+M`` pour restaurer
+          la barre de menus QGIS en cas d'urgence.
+        """
         self.engine = PerspectiveEngine()
         self.engine.initialize()
 
+        # Créer la toolbar principale
         self.toolbar = QToolBar("Gestionnaire de Perspectives")
         self.toolbar.setObjectName("PerspectiveManagerToolbar")
         self.iface.addToolBar(self.toolbar)
 
+        # Bouton d'ouverture de la MainWindow
         self.action_open = QAction(
             QIcon(os.path.join(self.plugin_dir, "icon.png")),
             "Gérer les perspectives",
@@ -44,29 +117,37 @@ class PerspectiveManager:
         self.toolbar.addSeparator()
         self._refresh_toolbar()
 
+        # Connecter les signaux
         self.engine.perspectiveChanged.connect(
             self._on_perspective_changed
         )
+        self.engine.config_io.configChanged.connect(
+            self._on_config_file_changed
+        )
 
-        # ── Rafraîchir quand fichier modifié ────────
-        self.engine.config_io.configChanged.connect(self._on_config_file_changed)
-
-    def _on_config_file_changed(self):
-        """Rafraîchit la toolbar quand le JSON est modifié."""
-        print("[Plugin] Fichier JSON modifié → rafraîchissement toolbar")
-        self._refresh_toolbar()
-
-        if self.main_window and self.main_window.isVisible():
-            self.main_window._refresh_list()
-            current = self.main_window.inputName.text().strip()
-            if current:
-                self.main_window._load_perspective_in_tree(current)
-
-
-        self.main_window._refresh_list()
+        # Raccourci de secours pour restaurer la barre de menus
+        from qgis.PyQt.QtWidgets import QShortcut
+        from qgis.PyQt.QtGui import QKeySequence
+        self._shortcut_menu = QShortcut(
+            QKeySequence("Ctrl+Shift+M"),
+            self.iface.mainWindow()
+        )
+        self._shortcut_menu.activated.connect(
+            lambda: self.iface.mainWindow().menuBar().setVisible(True)
+        )
 
     def unload(self):
-        iface.mainWindow().menuBar().setVisible(True)
+        """
+        Décharge le plugin et restaure l'interface QGIS.
+
+        - Restaure la barre de menus QGIS (visible).
+        - Supprime l'entrée du menu Extensions.
+        - Supprime la toolbar.
+        - Ferme la :class:`MainWindow` si ouverte.
+        """
+        # Toujours restaurer la barre de menus à la désinstallation
+        self.iface.mainWindow().menuBar().setVisible(True)
+
         self.iface.removePluginMenu(
             "Gestionnaire de Perspectives", self.action_open
         )
@@ -77,6 +158,12 @@ class PerspectiveManager:
         del self.action_open
 
     def run(self):
+        """
+        Ouvre la fenêtre principale :class:`MainWindow`.
+
+        Crée la fenêtre au premier appel (``first_start``),
+        puis la réaffiche aux appels suivants.
+        """
         if self.first_start:
             self.first_start = False
             self.main_window = MainWindow(
@@ -89,23 +176,40 @@ class PerspectiveManager:
         self.main_window.show()
         self.main_window.raise_()
 
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
     # TOOLBAR
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
 
     def _refresh_toolbar(self):
-        """Recrée les boutons de perspectives."""
+        """
+        Recrée tous les boutons de perspectives dans la toolbar.
+
+        Supprime les boutons existants et recrée un
+        :class:`QToolButton` par perspective depuis ``self._cfg``.
+
+        **Style des boutons :**
+
+        - ``text`` → texte seulement.
+        - ``icon`` → icône seulement.
+        - ``icon_text`` → icône à gauche + texte.
+        - ``text_icon`` → texte à gauche + icône à droite
+          (via ``Qt.RightToLeft``).
+
+        **Menu dropdown :**
+
+        - Si la perspective a des ``dropdown_menus`` →
+          bouton avec flèche ``▼`` (``MenuButtonPopup``).
+        - Sinon → bouton simple (``DelayedPopup``).
+        """
         for action in self.perspective_actions.values():
             self.toolbar.removeAction(action)
         self.perspective_actions.clear()
         self.perspective_buttons.clear()
 
-        for name in self.engine.list_perspectives():
-            data      = self.engine.config_io.load(name)
-            style     = data.get("button_style", "text")
-            icon_path = data.get("icon", "")
-
-            # ── Dropdown configuré ? ──────────────────
+        for name in self.engine.config_io.list_all_merged():
+            data           = self.engine.config_io.load(name)
+            style          = data.get("button_style", "text")
+            icon_path      = data.get("icon", "")
             dropdown_menus = data.get("dropdown_menus", [])
             has_dropdown   = bool(dropdown_menus)
 
@@ -113,7 +217,7 @@ class PerspectiveManager:
             btn.setToolTip(f"Perspective : {name}")
             btn.setText(name)
 
-            # Icône
+            # Icône du bouton
             if icon_path and os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))
 
@@ -128,29 +232,23 @@ class PerspectiveManager:
                 style_map.get(style, Qt.ToolButtonTextOnly)
             )
 
-            # Pour text_icon — inverser icône et texte
+            # text_icon → icône à droite via direction RTL
             if style == "text_icon":
-                btn.setLayoutDirection(Qt.RightToLeft)  # ← icône à droite
+                btn.setLayoutDirection(Qt.RightToLeft)
             else:
-                btn.setLayoutDirection(Qt.LeftToRight)  # ← icône à gauche
+                btn.setLayoutDirection(Qt.LeftToRight)
 
+            # Mode dropdown ou bouton simple
             if has_dropdown:
-                # ── Avec dropdown ─────────────────────
                 menu = self._build_perspective_menu(name)
                 btn.setMenu(menu)
                 btn.setPopupMode(QToolButton.MenuButtonPopup)
-                # Clic simple → appliquer
-                btn.clicked.connect(
-                    lambda checked, n=name: self.engine.apply(n)
-                )
             else:
-                # ── Sans dropdown — bouton simple ──────
                 btn.setPopupMode(QToolButton.DelayedPopup)
-                btn.clicked.connect(
-                    lambda checked, n=name: self.engine.apply(n)
-                )
 
-            # Checkable
+            btn.clicked.connect(
+                lambda checked, n=name: self.engine.apply(n)
+            )
             btn.setCheckable(True)
             if self.engine.get_current_perspective() == name:
                 btn.setChecked(True)
@@ -159,78 +257,107 @@ class PerspectiveManager:
             self.perspective_actions[name] = action
             self.perspective_buttons[name] = btn
 
-    def _on_perspective_btn(self, name: str):
-        self.engine.apply(name)
+    def _on_config_file_changed(self):
+        """
+        Appelé quand ``user.psp.json`` est modifié depuis l'extérieur.
+
+        Rafraîchit la toolbar et met à jour la
+        :class:`MainWindow` si elle est visible.
+        """
+        self._refresh_toolbar()
+
+        if self.main_window and self.main_window.isVisible():
+            self.main_window._refresh_list()
+            current = self.main_window.inputName.text().strip()
+            if current:
+                self.main_window._load_perspective_in_tree(current)
 
     def _on_perspective_changed(self, name: str):
-        """Synchronise l'état enfoncé des boutons."""
+        """
+        Synchronise l'état enfoncé des boutons de la toolbar.
+
+        Enfonce le bouton de la perspective active et relâche
+        les autres. Ignore la valeur spéciale ``"__reload__"``.
+
+        :param name: Nom de la perspective appliquée,
+            ou ``"__reload__"`` pour un simple rafraîchissement.
+        :type name: str
+        """
         if name == "__reload__":
-            return  # ← juste un signal de reload, pas une perspective
+            return
         for perspective_name, btn in self.perspective_buttons.items():
             btn.setChecked(perspective_name == name)
 
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
     # MENU DROPDOWN
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
 
     def _build_perspective_menu(self, name: str) -> QMenu:
-        menu = QMenu()
-        data = self.engine.config_io.load(name)
+        """
+        Construit le menu dropdown d'une perspective.
 
+        Charge les ``dropdown_menus`` depuis ``self._cfg`` et
+        copie les :class:`QMenu` des plugins correspondants.
+
+        Gère la compatibilité avec l'ancienne structure
+        (liste de chaînes avec ``dropdown_plugin``).
+
+        :param name: Nom de la perspective.
+        :type name: str
+        :return: Menu dropdown prêt à être attaché au bouton.
+        :rtype: QMenu
+        """
+        menu           = QMenu()
+        data           = self.engine.config_io.load(name)
         dropdown_menus = data.get("dropdown_menus", [])
-        
-        print(f"[DEBUG menu] perspective: {name}")
-        print(f"[DEBUG menu] dropdown_menus: {dropdown_menus}")
 
-        # Compatibilité ancienne structure
+        # Compatibilité avec l'ancienne structure (liste de strings)
         if dropdown_menus and isinstance(dropdown_menus[0], str):
             old_plugin     = data.get("dropdown_plugin", "")
             dropdown_menus = [
                 {"plugin": old_plugin, "menu": m}
                 for m in dropdown_menus
             ]
-            print(f"[DEBUG menu] converti ancienne structure: {dropdown_menus}")
 
         if dropdown_menus:
             self._append_plugin_menus(menu, dropdown_menus)
-        else:
-            print(f"[DEBUG menu] pas de menus → dropdown vide")
 
         return menu
 
     def _append_plugin_menus(self, menu: QMenu, dropdown_menus: list):
-        registry = self.engine.get_registry()
+        """
+        Copie les menus sélectionnés des plugins dans le menu dropdown.
 
+        Groupe les menus par plugin avec un séparateur et un label
+        par plugin. Ignore les menus invalides ou introuvables.
+
+        :param menu: Menu cible dans lequel ajouter les sous-menus.
+        :type menu: QMenu
+        :param dropdown_menus: Liste de ``{"plugin": str, "menu": str}``.
+        :type dropdown_menus: list[dict]
+        """
+        registry     = self.engine.get_registry()
         plugins_seen = set()
 
         for item in dropdown_menus:
             plugin_name = item["plugin"]
             menu_name   = item["menu"]
 
-            print(f"[DEBUG append] plugin: {plugin_name} | menu: {menu_name}")
-
             plugin_data = registry.get(plugin_name, {})
             all_menus   = plugin_data.get("menus", [])
-
-            print(f"[DEBUG append] menus disponibles: {[m['name'] for m in all_menus]}")
 
             menu_info = next(
                 (m for m in all_menus if m["name"] == menu_name),
                 None
             )
-            
-            print(f"[DEBUG append] menu_info trouvé: {menu_info is not None}")
-
             if not menu_info:
                 continue
 
             original_menu = menu_info["object"]
-            
-            print(f"[DEBUG append] is_valid: {is_valid(original_menu)}")
-
             if not is_valid(original_menu):
                 continue
 
+            # Ajouter séparateur + label plugin au premier menu du plugin
             if plugin_name not in plugins_seen:
                 plugins_seen.add(plugin_name)
                 if menu.actions():
@@ -247,8 +374,17 @@ class PerspectiveManager:
 
     def _copy_menu(self, source_menu: QMenu, parent) -> QMenu:
         """
-        Copie récursive d'un QMenu.
-        Les actions déclenchent le comportement original du plugin.
+        Copie récursive d'un :class:`QMenu`.
+
+        Crée un nouveau menu avec les mêmes actions que la source.
+        Les actions copiées déclenchent les actions originales du plugin
+        via ``original_action.trigger()``.
+
+        :param source_menu: Menu source à copier.
+        :type source_menu: QMenu
+        :param parent: Widget parent du menu copié.
+        :return: Copie du menu source.
+        :rtype: QMenu
         """
         copied_menu = QMenu(source_menu.title(), parent)
         copied_menu.setIcon(source_menu.icon())
@@ -263,7 +399,7 @@ class PerspectiveManager:
                 copied_menu.addMenu(sub)
 
             else:
-                # Action simple → connecter au trigger original
+                # Action simple → déléguer au trigger original
                 new_action = QAction(
                     action.icon(),
                     action.text(),
@@ -282,68 +418,35 @@ class PerspectiveManager:
 
         return copied_menu
 
-    def _append_active_widgets(self, menu: QMenu, data: dict):
-        """
-        Ajoute uniquement les widgets visibles ET cochés
-        dans la perspective — sans doublons.
-        """
-        plugins_data = data.get("plugins", {})
-        registry     = self.engine.get_registry()
-
-        if not plugins_data:
-            return
-
-        # Collecter les widgets visibles sans doublons
-        visible_docks    = []
-        visible_toolbars = []
-        seen_names       = set()  # ← éviter les doublons
-
-        for plugin_name, plugin_data in plugins_data.items():
-
-            for dock in plugin_data.get("docks", []):
-                if dock.get("visible") and dock["name"] not in seen_names:
-                    seen_names.add(dock["name"])
-                    visible_docks.append(dock)
-
-            for tb in plugin_data.get("toolbars", []):
-                if tb.get("visible") and tb["name"] not in seen_names:
-                    seen_names.add(tb["name"])
-                    visible_toolbars.append(tb)
-
-        if not visible_docks and not visible_toolbars:
-            return
-
-        menu.addSeparator()
-        label = QAction("── Widgets actifs ──", menu)
-        label.setEnabled(False)
-        menu.addAction(label)
-
-        for dock in visible_docks:
-            a = QAction(f"🪟  {dock['label']}", menu)
-            a.setEnabled(False)
-            menu.addAction(a)
-
-        for tb in visible_toolbars:
-            a = QAction(f"🔧  {tb['label']}", menu)
-            a.setEnabled(False)
-            menu.addAction(a)
-    # ─────────────────────────────────────────
-    # ACTIONS TOOLBAR
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
+    # ACTIONS DEPUIS LA TOOLBAR
+    # ─────────────────────────────────────────────
 
     def _open_perspective(self, name: str):
-        """Ouvre la MainWindow sur la perspective donnée."""
+        """
+        Ouvre la :class:`MainWindow` et sélectionne une perspective.
+
+        :param name: Nom de la perspective à sélectionner.
+        :type name: str
+        """
         self.run()
         if self.main_window:
             items = self.main_window.listPerspectives.findItems(
                 name, Qt.MatchExactly
             )
             if items:
-                self.main_window.listPerspectives.setCurrentItem(
-                    items[0]
-                )
+                self.main_window.listPerspectives.setCurrentItem(items[0])
 
     def _duplicate_perspective(self, name: str):
+        """
+        Duplique une perspective depuis la toolbar.
+
+        Demande un nouveau nom, copie la perspective et
+        rafraîchit la toolbar et la :class:`MainWindow`.
+
+        :param name: Nom de la perspective à dupliquer.
+        :type name: str
+        """
         new_name, ok = QInputDialog.getText(
             None, "Dupliquer", "Nouveau nom :",
             text=f"{name} - copie"
@@ -357,8 +460,17 @@ class PerspectiveManager:
                 self.main_window._refresh_list()
 
     def _delete_perspective(self, name: str):
+        """
+        Supprime une perspective depuis la toolbar après confirmation.
+
+        La perspective ``QGIS`` est protégée contre la suppression.
+
+        :param name: Nom de la perspective à supprimer.
+        :type name: str
+        """
         if name == "QGIS":
             return
+
         reply = QMessageBox.question(
             None, "Supprimer",
             f"Supprimer la perspective '{name}' ?",

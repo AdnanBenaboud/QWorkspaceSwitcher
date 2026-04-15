@@ -1,4 +1,42 @@
+# coding: utf-8
+
+"""
+Module de l'interface principale du plugin Gestionnaire de Perspectives.
+
+Ce module fournit la classe :class:`MainWindow`, boîte de dialogue Qt
+permettant à l'utilisateur de créer, modifier, supprimer et appliquer
+des perspectives QGIS.
+
+**Structure de l'interface :**
+
+.. code-block:: text
+
+    ┌──────────────────────────────────────────────────────┐
+    │  Liste des perspectives  │  Éditeur de perspective   │
+    │  ─────────────────────   │  ──────────────────────── │
+    │  • QGIS                  │  Nom : [____________]      │
+    │  • Saisie terrain        │  Configuration du bouton   │
+    │  • Visualisation         │  ┌──────────────────────┐  │
+    │                          │  │ Panneaux │ Toolbars   │  │
+    │  [+ Nouveau]             │  │ Menus               │  │
+    │  [Dupliquer]             │  └──────────────────────┘  │
+    │  [Supprimer]             │  [Appliquer] [Sauvegarder] │
+    └──────────────────────────────────────────────────────┘
+
+**Toolbars masquées dans le tree** (liées à un dock ou sans nom valide) :
+
+- ``QToolBar``
+- ``mBrowserToolbar``
+- ``mAdvancedDigitizeToolBar``
+- ``mGpsToolBar``
+- ``mBookmarkToolbar``
+- ``processingToolbar``
+
+:author: Adnan Benaboud — CNR
+"""
+
 import os
+
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import (
     QDialog, QTreeWidgetItem, QComboBox,
@@ -6,14 +44,18 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
+
 from ..applicators.state_capture import StateCapture
+
 
 FORM_CLASS, _ = uic.loadUiType(
     os.path.join(os.path.dirname(__file__), 'main_window.ui')
 )
 
+#: Perspectives protégées contre la suppression.
 PROTECTED_PERSPECTIVES = ["QGIS"]
 
+#: Toolbars masquées dans le tree — liées à un dock ou sans nom valide.
 HIDDEN_TOOLBARS = {
     "QToolBar",
     "mBrowserToolbar",
@@ -25,20 +67,58 @@ HIDDEN_TOOLBARS = {
 
 
 class MainWindow(QDialog, FORM_CLASS):
+    """
+    Interface principale du Gestionnaire de Perspectives.
+
+    Permet de créer, modifier, supprimer, dupliquer et appliquer
+    des perspectives QGIS. Charge le fichier ``.ui`` via
+    :func:`uic.loadUiType`.
+
+    **Signaux :**
+
+    - :attr:`perspectiveSaved` — émis après chaque sauvegarde ou capture.
+
+    :exemple:
+
+    .. code-block:: python
+
+        window = MainWindow(engine=engine, parent=iface.mainWindow())
+        window.show()
+    """
 
     perspectiveSaved = pyqtSignal()
+    """Signal émis après chaque sauvegarde ou capture de perspective."""
 
     def __init__(self, engine, parent=None):
+        """
+        Initialise la fenêtre principale.
+
+        Construit les widgets dynamiques, connecte les signaux,
+        remplit la liste des perspectives et les trees de widgets.
+
+        :param engine: Moteur principal du plugin.
+        :type engine: PerspectiveEngine
+        :param parent: Widget parent Qt.
+        :type parent: QWidget or None
+        """
         super().__init__(parent)
         self.setupUi(self)
         self.setWindowTitle("Gestionnaire de Perspectives")
         self.engine             = engine
         self._current_icon_path = ""
 
-        # Construire les widgets dynamiques D'ABORD
+        # Connecter les signaux Configuration pour l'indicateur titre
+        self.engine.config_io._cfg.sgl_unsaved.connect(
+            lambda: self.setWindowTitle("Gestionnaire de Perspectives *")
+        )
+        self.engine.config_io._cfg.sgl_saved.connect(
+            lambda: self.setWindowTitle("Gestionnaire de Perspectives")
+        )
+
+        # Construire les widgets dynamiques avant _set_editor_visible
         self._build_style_widgets()
 
-        # Cacher le panneau central
+        # Cacher le panneau central jusqu'à sélection d'une perspective
         self._set_editor_visible(False)
 
         # Connecter les boutons
@@ -52,11 +132,11 @@ class MainWindow(QDialog, FORM_CLASS):
             self._export_perspectives_json
         )
 
-        # Remplir la liste
+        # Remplir la liste et les trees
         self._refresh_list()
         self._populate_tree()
 
-        # Signal sélection
+        # Connecter la sélection dans la liste
         self.listPerspectives.currentTextChanged.connect(
             self._on_perspective_selected
         )
@@ -66,9 +146,19 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _build_style_widgets(self):
-        """Configure les widgets créés dans Qt Designer."""
+        """
+        Configure les widgets de style créés dans Qt Designer.
 
-        # checkBox_icon
+        Connecte les signaux et initialise les états par défaut de :
+
+        - ``checkBox_icon`` — active/désactive le choix d'icône.
+        - ``comboBox_emplacement`` — style du bouton toolbar.
+        - ``pushButton_importIcon`` — ouvre le sélecteur de fichier icône.
+        - ``checkBox_ajoutMenu`` — active/désactive le menu dropdown.
+        - ``treeWidget_menu`` — arbre de sélection des menus.
+        - ``checkBox_menuBar`` — affiche/cache la barre de menus QGIS.
+        """
+        # Icône
         self.checkBox_icon.stateChanged.connect(
             self._on_icon_checkbox_changed
         )
@@ -86,13 +176,13 @@ class MainWindow(QDialog, FORM_CLASS):
         self.pushButton_importIcon.setEnabled(False)
         self.pushButton_importIcon.clicked.connect(self._on_choose_icon)
 
-        # checkBox_ajoutMenu
+        # Menu dropdown
         self.checkBox_ajoutMenu.stateChanged.connect(
             self._on_menu_checkbox_changed
         )
         self.treeWidget_menu.setEnabled(False)
 
-        # checkBox_menuBar — True par défaut
+        # Barre de menus QGIS
         self.checkBox_menuBar.setChecked(True)
         self.checkBox_menuBar.setToolTip(
             "Afficher ou cacher la barre de menus QGIS "
@@ -100,6 +190,13 @@ class MainWindow(QDialog, FORM_CLASS):
         )
 
     def _on_icon_checkbox_changed(self, state: int):
+        """
+        Active ou désactive les widgets de sélection d'icône.
+
+        :param state: État de la checkbox (``Qt.Checked`` ou
+            ``Qt.Unchecked``).
+        :type state: int
+        """
         enabled = state == Qt.Checked
         self.comboBox_emplacement.setEnabled(enabled)
         self.pushButton_importIcon.setEnabled(enabled)
@@ -109,6 +206,15 @@ class MainWindow(QDialog, FORM_CLASS):
             self.pushButton_importIcon.setText("Choisir l'icône")
 
     def _on_menu_checkbox_changed(self, state: int):
+        """
+        Active ou désactive le tree de sélection des menus dropdown.
+
+        Décoche tous les menus quand la checkbox est désactivée.
+
+        :param state: État de la checkbox (``Qt.Checked`` ou
+            ``Qt.Unchecked``).
+        :type state: int
+        """
         self.treeWidget_menu.setEnabled(state == Qt.Checked)
         if state != Qt.Checked:
             self.treeWidget_menu.blockSignals(True)
@@ -120,6 +226,12 @@ class MainWindow(QDialog, FORM_CLASS):
             self.treeWidget_menu.blockSignals(False)
 
     def _on_choose_icon(self):
+        """
+        Ouvre un dialogue de sélection de fichier image.
+
+        Met à jour :attr:`_current_icon_path` et affiche l'icône
+        choisie sur le bouton ``pushButton_importIcon``.
+        """
         from qgis.PyQt.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
             self, "Choisir une icône", "",
@@ -135,6 +247,12 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _export_perspectives_json(self):
+        """
+        Exporte ``user.psp.json`` vers un emplacement choisi par l'utilisateur.
+
+        Ouvre un dialogue de sauvegarde et copie le fichier source
+        vers la destination choisie.
+        """
         from qgis.PyQt.QtWidgets import QFileDialog
         import shutil
 
@@ -142,13 +260,13 @@ class MainWindow(QDialog, FORM_CLASS):
         if not os.path.exists(source_path):
             QMessageBox.warning(
                 self, "Fichier introuvable",
-                "Aucun fichier perspectives.json à exporter."
+                "Aucun fichier de perspectives à exporter."
             )
             return
 
         dest_path, _ = QFileDialog.getSaveFileName(
             self, "Exporter les perspectives",
-            os.path.join(os.path.expanduser("~"), "perspectives.json"),
+            os.path.join(os.path.expanduser("~"), "user.psp.json"),
             "JSON (*.json)"
         )
         if not dest_path:
@@ -171,6 +289,12 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _refresh_list(self):
+        """
+        Recharge la liste des perspectives depuis ``self._cfg``.
+
+        Conserve la sélection courante si elle existe encore
+        dans la liste mise à jour.
+        """
         current_name = self.inputName.text().strip()
 
         self.listPerspectives.blockSignals(True)
@@ -190,6 +314,14 @@ class MainWindow(QDialog, FORM_CLASS):
                 self._set_editor_visible(True)
 
     def _on_perspective_selected(self, name: str):
+        """
+        Appelé quand l'utilisateur sélectionne une perspective dans la liste.
+
+        Met à jour le champ nom et charge la perspective dans les trees.
+
+        :param name: Nom de la perspective sélectionnée.
+        :type name: str
+        """
         if not name:
             self._set_editor_visible(False)
             return
@@ -202,11 +334,23 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _populate_tree(self):
+        """
+        Remplit les trois trees depuis le registre des plugins.
+
+        Appelle successivement :meth:`_populate_docks_tree`,
+        :meth:`_populate_toolbars_tree` et :meth:`_populate_menus_tree`.
+        """
         self._populate_docks_tree()
         self._populate_toolbars_tree()
         self._populate_menus_tree()
 
     def _populate_docks_tree(self):
+        """
+        Remplit ``treeDocks`` depuis le registre des plugins.
+
+        Crée un nœud parent par plugin et un nœud enfant par dock,
+        avec une :class:`QComboBox` de sélection de zone en colonne 2.
+        """
         self.treeDocks.clear()
         self.treeDocks.setColumnCount(3)
         self.treeDocks.setHeaderLabels(["Nom", "Type", "Zone"])
@@ -235,6 +379,18 @@ class MainWindow(QDialog, FORM_CLASS):
         self.treeDocks.itemChanged.connect(self._on_dock_item_changed)
 
     def _populate_toolbars_tree(self, perspective_data: dict = None):
+        """
+        Remplit ``treeToolbars`` depuis le registre des plugins.
+
+        Filtre les toolbars de :data:`HIDDEN_TOOLBARS`. Si
+        ``perspective_data`` est fourni, pré-remplit les numéros
+        de ligne depuis les données JSON sauvegardées.
+
+        :param perspective_data: Données d'une perspective existante
+            pour initialiser les lignes des toolbars.
+            Si ``None``, utilise la ligne 1 par défaut.
+        :type perspective_data: dict or None
+        """
         try:
             self.treeToolbars.itemChanged.disconnect()
         except Exception:
@@ -287,6 +443,13 @@ class MainWindow(QDialog, FORM_CLASS):
         self.treeToolbars.itemChanged.connect(self._on_toolbar_item_changed)
 
     def _populate_menus_tree(self):
+        """
+        Remplit ``treeWidget_menu`` depuis le registre des plugins.
+
+        Crée un nœud parent par plugin et un nœud enfant par menu.
+        Stocke le nom du plugin dans ``Qt.UserRole + 1`` de chaque
+        nœud enfant pour faciliter la récupération lors de la sauvegarde.
+        """
         self.treeWidget_menu.clear()
         self.treeWidget_menu.setColumnCount(1)
         self.treeWidget_menu.setHeaderLabels(["Menu"])
@@ -319,7 +482,20 @@ class MainWindow(QDialog, FORM_CLASS):
             self._on_menu_item_changed
         )
 
-    def _add_dock_item(self, parent_item, dock_info: dict):
+    def _add_dock_item(self, parent_item: QTreeWidgetItem,
+                       dock_info: dict) -> QTreeWidgetItem:
+        """
+        Ajoute un nœud dock dans ``treeDocks``.
+
+        Crée une :class:`QComboBox` de sélection de zone en colonne 2.
+
+        :param parent_item: Nœud parent (plugin) dans l'arbre.
+        :type parent_item: QTreeWidgetItem
+        :param dock_info: Informations du dock issues du registre.
+        :type dock_info: dict
+        :return: Nœud enfant créé.
+        :rtype: QTreeWidgetItem
+        """
         child = QTreeWidgetItem(parent_item)
         child.setText(0, dock_info["label"])
         child.setText(1, "dock")
@@ -337,8 +513,24 @@ class MainWindow(QDialog, FORM_CLASS):
         child.setCheckState(0, Qt.Unchecked)
         return child
 
-    def _add_toolbar_item(self, parent_item, tb_info: dict,
-                          saved_line: int = 1):
+    def _add_toolbar_item(self, parent_item: QTreeWidgetItem,
+                          tb_info: dict,
+                          saved_line: int = 1) -> QTreeWidgetItem:
+        """
+        Ajoute un nœud toolbar dans ``treeToolbars``.
+
+        Crée un :class:`QSpinBox` de sélection de ligne en colonne 1.
+
+        :param parent_item: Nœud parent (plugin) dans l'arbre.
+        :type parent_item: QTreeWidgetItem
+        :param tb_info: Informations de la toolbar issues du registre.
+        :type tb_info: dict
+        :param saved_line: Numéro de ligne sauvegardé dans le JSON.
+            Utilisé pour initialiser le :class:`QSpinBox`.
+        :type saved_line: int
+        :return: Nœud enfant créé.
+        :rtype: QTreeWidgetItem
+        """
         child = QTreeWidgetItem(parent_item)
         child.setText(0, tb_info["label"])
         child.setData(0, Qt.UserRole, tb_info["name"])
@@ -348,7 +540,7 @@ class MainWindow(QDialog, FORM_CLASS):
         spinbox.setMinimum(1)
         spinbox.setMaximum(5)
         spinbox.setValue(saved_line)
-        spinbox.setToolTip("Ligne dans la zone")
+        spinbox.setToolTip("Ligne dans la zone toolbar")
         self.treeToolbars.setItemWidget(child, 1, spinbox)
 
         child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
@@ -356,10 +548,18 @@ class MainWindow(QDialog, FORM_CLASS):
         return child
 
     # ─────────────────────────────────────────────
-    # SIGNALS TREE
+    # SIGNAUX TREE
     # ─────────────────────────────────────────────
 
-    def _on_dock_item_changed(self, item, column):
+    def _on_dock_item_changed(self, item: QTreeWidgetItem, column: int):
+        """
+        Met à jour la checkbox parent de ``treeDocks`` après un changement.
+
+        :param item: Nœud modifié.
+        :type item: QTreeWidgetItem
+        :param column: Colonne modifiée.
+        :type column: int
+        """
         if column != 0:
             return
         parent = item.parent()
@@ -367,7 +567,15 @@ class MainWindow(QDialog, FORM_CLASS):
             return
         self._update_parent_check(self.treeDocks, parent)
 
-    def _on_toolbar_item_changed(self, item, column):
+    def _on_toolbar_item_changed(self, item: QTreeWidgetItem, column: int):
+        """
+        Met à jour la checkbox parent de ``treeToolbars`` après un changement.
+
+        :param item: Nœud modifié.
+        :type item: QTreeWidgetItem
+        :param column: Colonne modifiée.
+        :type column: int
+        """
         if column != 0:
             return
         parent = item.parent()
@@ -375,7 +583,16 @@ class MainWindow(QDialog, FORM_CLASS):
             return
         self._update_parent_check(self.treeToolbars, parent)
 
-    def _on_menu_item_changed(self, item, column):
+    def _on_menu_item_changed(self, item: QTreeWidgetItem, column: int):
+        """
+        Met à jour la checkbox parent de ``treeWidget_menu``
+        après un changement.
+
+        :param item: Nœud modifié.
+        :type item: QTreeWidgetItem
+        :param column: Colonne modifiée.
+        :type column: int
+        """
         if column != 0:
             return
         parent = item.parent()
@@ -383,7 +600,18 @@ class MainWindow(QDialog, FORM_CLASS):
             return
         self._update_parent_check(self.treeWidget_menu, parent)
 
-    def _update_parent_check(self, tree, parent):
+    def _update_parent_check(self, tree, parent: QTreeWidgetItem):
+        """
+        Met à jour l'état de la checkbox d'un nœud parent selon ses enfants.
+
+        - Tous cochés → ``Qt.Checked``.
+        - Aucun coché → ``Qt.Unchecked``.
+        - Partiellement cochés → ``Qt.PartiallyChecked``.
+
+        :param tree: Arbre contenant le nœud parent.
+        :param parent: Nœud parent à mettre à jour.
+        :type parent: QTreeWidgetItem
+        """
         total   = parent.childCount()
         checked = sum(
             1 for i in range(total)
@@ -403,14 +631,30 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _load_perspective_in_tree(self, name: str):
+        """
+        Charge une perspective existante dans tous les trees et widgets.
+
+        Met à jour :
+
+        - ``checkBox_icon``, ``comboBox_emplacement``,
+          ``pushButton_importIcon`` — style et icône.
+        - ``checkBox_menuBar`` — visibilité barre de menus.
+        - ``checkBox_ajoutMenu``, ``treeWidget_menu`` — menus dropdown.
+        - ``treeDocks`` — état des panneaux.
+        - ``treeToolbars`` — état et lignes des toolbars.
+
+        :param name: Nom de la perspective à charger.
+        :type name: str
+        """
         data = self.engine.config_io.load(name)
         if not data:
             self._reset_tree()
             return
 
-        # ── Icône ─────────────────────────────────
+        # ── Icône et style du bouton ───────────────
         icon_path    = data.get("icon", "")
         button_style = data.get("button_style", "text")
+
         if icon_path:
             self.checkBox_icon.blockSignals(True)
             self.checkBox_icon.setChecked(True)
@@ -445,6 +689,7 @@ class MainWindow(QDialog, FORM_CLASS):
         # ── Menus dropdown ─────────────────────────
         dropdown_menus = data.get("dropdown_menus", [])
 
+        # Compatibilité avec l'ancienne structure (liste de strings)
         if dropdown_menus and isinstance(dropdown_menus[0], str):
             old_plugin     = data.get("dropdown_plugin", "")
             dropdown_menus = [
@@ -476,7 +721,7 @@ class MainWindow(QDialog, FORM_CLASS):
                     child.setCheckState(0, Qt.Unchecked)
         self.treeWidget_menu.blockSignals(False)
 
-        # ── Repeupler treeToolbars ─────────────────
+        # ── Repeupler treeToolbars avec les vraies lignes ──
         self._populate_toolbars_tree(perspective_data=data)
 
         # ── treeDocks ─────────────────────────────
@@ -550,6 +795,14 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _reset_tree(self):
+        """
+        Réinitialise tous les trees et widgets de configuration.
+
+        - Décoche toutes les checkboxes des trois trees.
+        - Réinitialise les :class:`QComboBox` et :class:`QSpinBox`.
+        - Réinitialise les checkboxes icône, menu, barre de menus.
+        - Vide :attr:`_current_icon_path`.
+        """
         for tree in [self.treeDocks, self.treeToolbars]:
             tree.blockSignals(True)
             for i in range(tree.topLevelItemCount()):
@@ -576,16 +829,19 @@ class MainWindow(QDialog, FORM_CLASS):
                 plugin_item.child(j).setCheckState(0, Qt.Unchecked)
         self.treeWidget_menu.blockSignals(False)
 
-        # Réinitialiser checkboxes
+        # Réinitialiser les checkboxes de configuration
         self.checkBox_icon.blockSignals(True)
         self.checkBox_icon.setChecked(False)
         self.checkBox_icon.blockSignals(False)
+
         self.checkBox_ajoutMenu.blockSignals(True)
         self.checkBox_ajoutMenu.setChecked(False)
         self.checkBox_ajoutMenu.blockSignals(False)
+
         self.checkBox_menuBar.blockSignals(True)
-        self.checkBox_menuBar.setChecked(True)   # ← True par défaut
+        self.checkBox_menuBar.setChecked(True)
         self.checkBox_menuBar.blockSignals(False)
+
         self._current_icon_path = ""
         self.pushButton_importIcon.setIcon(QIcon())
         self.pushButton_importIcon.setText("Choisir l'icône")
@@ -599,6 +855,11 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _on_apply(self):
+        """
+        Applique la perspective sélectionnée dans la liste.
+
+        Délègue à :meth:`PerspectiveEngine.apply`.
+        """
         name = self.listPerspectives.currentItem()
         if not name:
             QMessageBox.warning(
@@ -608,6 +869,13 @@ class MainWindow(QDialog, FORM_CLASS):
         self.engine.apply(name.text())
 
     def _on_save(self):
+        """
+        Sauvegarde la perspective courante depuis les trees.
+
+        Construit le dictionnaire via :meth:`_build_data_from_tree`,
+        y ajoute les métadonnées (style, icône, barre de menus, menus
+        dropdown) et délègue à :meth:`PerspectiveEngine.save_from_data`.
+        """
         name = self.inputName.text().strip()
         if not name:
             QMessageBox.warning(self, "Attention", "Donne un nom.")
@@ -623,15 +891,15 @@ class MainWindow(QDialog, FORM_CLASS):
             data["button_style"] = "text"
             data["icon"]         = ""
 
-        # Barre de menus ← nouveau
+        # Barre de menus QGIS
         data["show_menu_bar"] = self.checkBox_menuBar.isChecked()
 
         # Menus dropdown
-        if self.checkBox_ajoutMenu.isChecked():
-            dropdown_menus = self._get_selected_menus()
-        else:
-            dropdown_menus = []
-        data["dropdown_menus"] = dropdown_menus
+        data["dropdown_menus"] = (
+            self._get_selected_menus()
+            if self.checkBox_ajoutMenu.isChecked()
+            else []
+        )
 
         self.engine.save_from_data(name, data)
         self._refresh_list()
@@ -643,6 +911,24 @@ class MainWindow(QDialog, FORM_CLASS):
         )
 
     def _get_selected_menus(self) -> list:
+        """
+        Retourne la liste des menus cochés dans ``treeWidget_menu``.
+
+        Chaque élément est un dictionnaire ``{"plugin": str, "menu": str}``.
+
+        :return: Liste des menus sélectionnés.
+        :rtype: list[dict]
+
+        :exemple:
+
+        .. code-block:: python
+
+            menus = self._get_selected_menus()
+            # → [
+            #     {"plugin": "georelai", "menu": "study_menu"},
+            #     {"plugin": "q4ts",     "menu": "mesh_menu"},
+            # ]
+        """
         selected = []
         for i in range(self.treeWidget_menu.topLevelItemCount()):
             plugin_item = self.treeWidget_menu.topLevelItem(i)
@@ -656,6 +942,13 @@ class MainWindow(QDialog, FORM_CLASS):
         return selected
 
     def _on_capture(self):
+        """
+        Capture l'état courant de l'interface QGIS et sauvegarde.
+
+        Rescanne les plugins, capture l'état via
+        :class:`~perspective_manager.applicators.state_capture.StateCapture`
+        et sauvegarde dans ``self._cfg`` et ``user.psp.json``.
+        """
         name = self.inputName.text().strip()
         if not name:
             QMessageBox.warning(
@@ -677,6 +970,13 @@ class MainWindow(QDialog, FORM_CLASS):
         )
 
     def _on_add(self):
+        """
+        Crée une nouvelle perspective en capturant l'état actuel de QGIS.
+
+        Demande un nom à l'utilisateur, vérifie l'absence de doublon,
+        crée la perspective via :meth:`PerspectiveEngine.add_perspective`
+        et la sélectionne dans la liste.
+        """
         name, ok = QInputDialog.getText(
             self, "Nouvelle perspective", "Nom de la perspective :"
         )
@@ -708,9 +1008,16 @@ class MainWindow(QDialog, FORM_CLASS):
         self._load_perspective_in_tree(name)
 
     def _on_duplicate(self):
+        """
+        Duplique la perspective sélectionnée sous un nouveau nom.
+
+        Charge la perspective originale, lui assigne le nouveau nom
+        et la sauvegarde via :meth:`PerspectiveEngine.save_from_data`.
+        """
         item = self.listPerspectives.currentItem()
         if not item:
             return
+
         old_name = item.text()
         new_name, ok = QInputDialog.getText(
             self, "Dupliquer", "Nouveau nom :",
@@ -724,6 +1031,12 @@ class MainWindow(QDialog, FORM_CLASS):
             self.perspectiveSaved.emit()
 
     def _on_delete(self):
+        """
+        Supprime la perspective sélectionnée après confirmation.
+
+        Les perspectives de :data:`PROTECTED_PERSPECTIVES` ne peuvent
+        pas être supprimées.
+        """
         item = self.listPerspectives.currentItem()
         if not item:
             return
@@ -759,11 +1072,25 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _build_data_from_tree(self, name: str) -> dict:
+        """
+        Construit le dictionnaire de perspective depuis les trees.
+
+        Parcourt ``treeDocks`` et ``treeToolbars`` pour extraire
+        l'état de chaque widget (visibilité, zone, ligne).
+
+        La zone des toolbars est préservée depuis le JSON existant
+        ou depuis le registre si absente.
+
+        :param name: Nom de la perspective à construire.
+        :type name: str
+        :return: Dictionnaire complet de la perspective.
+        :rtype: dict
+        """
         data         = {"name": name, "plugins": {}}
         registry     = self.engine.get_registry()
         plugin_names = list(registry.keys())
 
-        # ── treeDocks ─────────────────────────────
+        # ── Lire treeDocks ────────────────────────
         plugins_with_docks = [
             pn for pn in plugin_names if registry[pn].get("docks")
         ]
@@ -792,7 +1119,7 @@ class MainWindow(QDialog, FORM_CLASS):
                 }
             data["plugins"][plugin_name]["docks"] = docks_cfg
 
-        # ── treeToolbars ──────────────────────────
+        # ── Lire treeToolbars ─────────────────────
         plugins_with_toolbars = [
             pn for pn in plugin_names if registry[pn].get("toolbars")
         ]
@@ -801,6 +1128,7 @@ class MainWindow(QDialog, FORM_CLASS):
             plugin_name  = plugins_with_toolbars[i]
             toolbars_cfg = []
 
+            # Récupérer les zones depuis le JSON existant
             existing = {
                 t["name"]: t
                 for t in self.engine.config_io.load(
@@ -815,13 +1143,17 @@ class MainWindow(QDialog, FORM_CLASS):
                 spinbox     = self.treeToolbars.itemWidget(child, 1)
                 line        = spinbox.value() if spinbox else 1
 
+                # Zone depuis le JSON ou depuis le registre
                 existing_tb = existing.get(widget_name)
                 if existing_tb:
                     area = existing_tb.get("area", "top")
                 else:
-                    reg_tbs = registry.get(plugin_name, {}).get("toolbars", [])
+                    reg_tbs = registry.get(plugin_name, {}).get(
+                        "toolbars", []
+                    )
                     reg_tb  = next(
-                        (t for t in reg_tbs if t["name"] == widget_name), {}
+                        (t for t in reg_tbs if t["name"] == widget_name),
+                        {}
                     )
                     area = reg_tb.get("area", "top")
 
@@ -846,13 +1178,23 @@ class MainWindow(QDialog, FORM_CLASS):
     # ─────────────────────────────────────────────
 
     def _set_editor_visible(self, visible: bool):
+        """
+        Affiche ou cache le panneau central d'édition.
+
+        Quand ``visible`` est ``False``, affiche ``labelPlaceholder``
+        (message d'invitation à sélectionner une perspective).
+
+        :param visible: ``True`` pour afficher le panneau, ``False``
+            pour afficher le placeholder.
+        :type visible: bool
+        """
         self.inputName.setVisible(visible)
         self.btnCapture.setVisible(visible)
         self.tabWidget.setVisible(visible)
         self.btnApply.setVisible(visible)
         self.btnSave.setVisible(visible)
         self.btnDuplicate.setVisible(visible)
-        self.checkBox_menuBar.setVisible(visible)  # ← nouveau
+        self.checkBox_menuBar.setVisible(visible)
         self.labelPlaceholder.setVisible(not visible)
         if hasattr(self, 'groupConfig'):
             self.groupConfig.setVisible(visible)

@@ -1,27 +1,68 @@
-from qgis.PyQt.QtCore import QObject, pyqtSignal
+# coding: utf-8
+
+"""
+Module du moteur principal du plugin Gestionnaire de Perspectives.
+
+Ce module fournit la classe :class:`PerspectiveEngine`, chef d'orchestre
+du plugin. Elle coordonne :class:`~perspective_manager.core.plugin_discovery.PluginDiscovery`,
+:class:`~perspective_manager.core.config_io.ConfigIO` et les applicateurs
+pour appliquer les perspectives sur l'interface QGIS.
+
+**Flux d'application d'une perspective :**
+
+.. code-block:: text
+
+    apply("Saisie terrain")
+        │
+        ├── Passe 1 — _hide_all()
+        │       → cache tous les docks et toolbars
+        │
+        ├── Passe 2 — DockApplicator.apply()
+        │       → positionne et affiche les docks
+        │
+        ├── Passe 3 — ToolbarApplicator.apply_all()
+        │       → positionne et affiche les toolbars
+        │
+        └── Passe 4 — menuBar().setVisible()
+                → affiche/cache la barre de menus QGIS
+
+**Toolbars exclues** (jamais repositionnées) :
+
+- ``PerspectiveManagerToolbar`` — toolbar du plugin lui-même.
+- ``QToolBar`` — widgets sans nom valide.
+
+**Toolbars liées** (suivent automatiquement leur dock) :
+
+- ``mBrowserToolbar`` → dock ``Browser``
+- ``mAdvancedDigitizeToolBar`` → dock ``AdvancedDigitizingTools``
+- ``mGpsToolBar`` → dock ``GPSInformation``
+- ``mBookmarkToolbar`` → dock ``BookmarksDockWidget``
+- ``processingToolbar`` → dock ``ProcessingToolbox``
+
+:author: Adnan Benaboud — CNR
+"""
+
+from qgis.PyQt.QtCore import QObject, pyqtSignal, Qt
 from qgis.PyQt.QtWidgets import QDockWidget, QToolBar
-from qgis.PyQt.QtCore import Qt
 from qgis.utils import iface
 
-from .plugin_discovery import PluginDiscovery
+from .plugin_discovery import PluginDiscovery, is_valid
 from .config_io import ConfigIO
-
 from ..applicators.dock_applicator import DockApplicator
 from ..applicators.toolbar_applicator import ToolbarApplicator
 from ..applicators.state_capture import StateCapture
 
-from .plugin_discovery import is_valid
 
-
+#: Toolbars liées à un dock — leur visibilité suit celle du dock via signal Qt.
 LINKED_TOOLBARS = {
-    #"mLayerToolBar",
-    "mBrowserToolbar", 
+    "mBrowserToolbar",
     "mAdvancedDigitizeToolBar",
     "mGpsToolBar",
     "mBookmarkToolbar",
     "processingToolbar",
 }
 
+#: Toolbars exclues — jamais cachées ni repositionnées par le plugin.
 EXCLUDED_TOOLBARS = {
     "PerspectiveManagerToolbar",
     "QToolBar",
@@ -30,38 +71,72 @@ EXCLUDED_TOOLBARS = {
 
 class PerspectiveEngine(QObject):
     """
-    Chef d'orchestre du plugin.
-    - Coordonne PluginDiscovery et ConfigIO
-    - Applique les perspectives sur l'interface QGIS
-    - Expose le signal perspectiveChanged
+    Chef d'orchestre du plugin Gestionnaire de Perspectives.
+
+    Coordonne la découverte des plugins, la gestion de la configuration
+    et l'application des perspectives sur l'interface QGIS.
+
+    **Responsabilités :**
+
+    - Scanner les plugins QGIS installés via :class:`PluginDiscovery`.
+    - Lire et écrire les perspectives via :class:`ConfigIO`.
+    - Appliquer les perspectives (docks, toolbars, barre de menus).
+    - Maintenir les liaisons dock ↔ toolbar automatiques.
+    - Émettre :attr:`perspectiveChanged` lors des changements.
+
+    :exemple:
+
+    .. code-block:: python
+
+        engine = PerspectiveEngine()
+        engine.initialize()
+        engine.apply("Saisie terrain")
     """
 
-    # Signal émis quand une perspective est appliquée
     perspectiveChanged = pyqtSignal(str)
+    """
+    Signal émis après l'application d'une perspective.
+
+    Transmet le nom de la perspective appliquée, ou ``"__reload__"``
+    lors d'un rechargement externe de la configuration.
+    """
+
+    DEFAULT_PERSPECTIVE_NAME = "QGIS"
+    """Nom de la perspective par défaut créée au premier démarrage."""
 
     def __init__(self):
+        """
+        Initialise le moteur avec des applicateurs à ``None``.
+
+        Les applicateurs sont instanciés dans :meth:`initialize`
+        après le scan des plugins.
+        """
         super().__init__()
-        self.discovery = PluginDiscovery()
-        self.config_io = ConfigIO()
-        self.registry = {}
+
+        self.discovery           = PluginDiscovery()
+        self.config_io           = ConfigIO()
+        self.registry            = {}
         self.current_perspective = None
 
-        # Applicateurs — initialisés à None, créés dans initialize()
         self.dock_applicator    = None
         self.toolbar_applicator = None
         self.state_capture      = None
 
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
     # INITIALISATION
-    # ─────────────────────────────────────────
-    DEFAULT_PERSPECTIVE_NAME = "QGIS"
+    # ─────────────────────────────────────────────
 
     def initialize(self):
         """
-        Initialise le moteur :
-        1. Scanne les plugins
-        2. Instancie les applicateurs
-        3. Crée la perspective QGIS par défaut si elle n'existe pas
+        Initialise le moteur au démarrage du plugin.
+
+        Effectue dans l'ordre :
+
+        1. Scan des plugins QGIS installés.
+        2. Instanciation des applicateurs.
+        3. Création de la perspective ``QGIS`` par défaut si absente.
+        4. Connexion des liaisons dock ↔ toolbar.
+        5. Connexion au signal :attr:`ConfigIO.configChanged`.
         """
         self.registry = self.discovery.scan()
 
@@ -69,76 +144,125 @@ class PerspectiveEngine(QObject):
         self.toolbar_applicator = ToolbarApplicator(self.discovery)
         self.state_capture      = StateCapture(self.discovery)
 
-        # Créer la perspective par défaut si première utilisation
         self._ensure_default_perspective()
         self._connect_dock_toolbar_links()
 
-        # ── Écouter les changements du fichier JSON ──
         self.config_io.configChanged.connect(self._on_config_changed)
-
-        print(f"[Engine] {len(self.registry)} plugins détectés")
 
     def _on_config_changed(self):
         """
-        Appelé quand le fichier JSON est modifié depuis l'extérieur.
-        Émet un signal pour rafraîchir l'UI.
+        Appelé quand ``user.psp.json`` est modifié depuis l'extérieur.
+
+        Émet :attr:`perspectiveChanged` avec la valeur spéciale
+        ``"__reload__"`` pour déclencher un rafraîchissement de l'UI
+        sans appliquer de perspective.
         """
-        print("[Engine] Configuration rechargée depuis le fichier")
         self.perspectiveChanged.emit("__reload__")
 
     def _ensure_default_perspective(self):
         """
-        Crée la perspective 'QGIS' par défaut
-        si elle n'existe pas encore.
-        Capture l'état actuel au premier démarrage.
+        Crée la perspective ``QGIS`` par défaut si elle est absente ou vide.
+
+        Vérifie que la perspective contient au moins un widget visible.
+        Si ce n'est pas le cas, capture l'état actuel de l'interface QGIS
+        et le sauvegarde comme perspective par défaut.
+
+        .. note::
+            La perspective ``QGIS`` est protégée contre la suppression
+            dans l'interface utilisateur.
         """
-        if self.DEFAULT_PERSPECTIVE_NAME in self.config_io.list_all():
-            return  # ← déjà créée — ne pas écraser
+        existing = self.config_io.load(self.DEFAULT_PERSPECTIVE_NAME)
 
-        print("[Engine] Création de la perspective QGIS par défaut...")
-        data = self.state_capture.capture(self.DEFAULT_PERSPECTIVE_NAME)
+        if existing:
+            has_visible = any(
+                item.get("visible")
+                for plugin_data in existing.get("plugins", {}).values()
+                for key in ["docks", "toolbars"]
+                for item in plugin_data.get(key, [])
+            )
+            if has_visible:
+                return
+
+        self.registry      = self.discovery.scan()
+        self.state_capture = StateCapture(self.discovery)
+        data               = self.state_capture.capture(
+            self.DEFAULT_PERSPECTIVE_NAME
+        )
         self.config_io.save(self.DEFAULT_PERSPECTIVE_NAME, data)
-        print("[Engine] Perspective QGIS par défaut créée ✓")
 
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
     # PERSPECTIVES — LISTE
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
 
     def list_perspectives(self) -> list:
-        """Retourne la liste des noms de perspectives disponibles."""
+        """
+        Retourne la liste des noms de toutes les perspectives.
+
+        Inclut les perspectives utilisateur et celles des plugins.
+
+        :return: Liste des noms de perspectives.
+        :rtype: list[str]
+        """
         return self.config_io.list_all()
 
-    # ─────────────────────────────────────────
-    # PERSPECTIVES — APPLIQUER
-    # ─────────────────────────────────────────
+    def list_perspectives_merged(self) -> list:
+        """
+        Alias de :meth:`list_perspectives`.
+
+        Conservé pour compatibilité avec les appels de la toolbar.
+
+        :return: Liste des noms de perspectives.
+        :rtype: list[str]
+        """
+        return self.config_io.list_all_merged()
+
+    # ─────────────────────────────────────────────
+    # PERSPECTIVES — CRÉER
+    # ─────────────────────────────────────────────
 
     def add_perspective(self, name: str) -> bool:
         """
-        Crée une nouvelle perspective avec l'état actuel
-        de QGIS comme point de départ.
+        Crée une nouvelle perspective en capturant l'état actuel de QGIS.
+
+        Rescanne les plugins avant la capture pour garantir des références
+        Qt valides.
+
+        :param name: Nom de la nouvelle perspective.
+        :type name: str
+        :return: ``True`` si créée, ``False`` si le nom existe déjà.
+        :rtype: bool
         """
         if name in self.config_io.list_all():
             return False
 
-        # Rescanner avant de capturer — garantit des références valides
-        self.registry = self.discovery.scan()
+        self.registry      = self.discovery.scan()
         self.state_capture = StateCapture(self.discovery)
 
         data = self.state_capture.capture(name)
         self.config_io.save(name, data)
-        print(f"[Engine] Nouvelle perspective créée : {name}")
         return True
-        
-    # ─────────────────────────────────────────
+
+    # ─────────────────────────────────────────────
     # PERSPECTIVES — APPLIQUER
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
 
     def apply(self, name: str):
         """
         Charge et applique une perspective par son nom.
-        Émet perspectiveChanged si succès.
+
+        Effectue quatre passes successives :
+
+        1. Cache tous les docks et toolbars.
+        2. Applique la configuration des docks.
+        3. Applique la configuration des toolbars.
+        4. Affiche ou cache la barre de menus QGIS.
+
+        Émet :attr:`perspectiveChanged` en cas de succès.
+
+        :param name: Nom de la perspective à appliquer.
+        :type name: str
         """
-        # Rescanner
+        # Rescanner pour avoir des références Qt valides
         self.registry           = self.discovery.scan()
         self.dock_applicator    = DockApplicator(self.discovery)
         self.toolbar_applicator = ToolbarApplicator(self.discovery)
@@ -146,72 +270,73 @@ class PerspectiveEngine(QObject):
 
         data = self.config_io.load(name)
         if not data:
-            print(f"[Engine] Perspective introuvable : {name}")
             return
 
         main_win = iface.mainWindow()
         main_win.setUpdatesEnabled(False)
 
         try:
-            # ── Passe 1 — Cacher tout ─────────────
+            # Passe 1 — cacher tout
             self._hide_all()
 
-            # ── Passe 2 — Appliquer les docks ─────
+            # Passe 2 — appliquer les docks
             for plugin_name, plugin_data in data.get("plugins", {}).items():
                 self.dock_applicator.apply(
                     plugin_name,
                     plugin_data.get("docks", [])
                 )
 
-            # ── Passe 3 — Appliquer les toolbars ──
+            # Passe 3 — appliquer les toolbars
             all_toolbars = {
                 plugin_name: plugin_data.get("toolbars", [])
                 for plugin_name, plugin_data in data.get("plugins", {}).items()
             }
             self.toolbar_applicator.apply_all(all_toolbars)
 
-            # ── Passe 4 — Barre de menus ──────────
+            # Passe 4 — barre de menus
             show_menu_bar = data.get("show_menu_bar", True)
             iface.mainWindow().menuBar().setVisible(show_menu_bar)
 
             self.current_perspective = name
             self.perspectiveChanged.emit(name)
-            print(f"[Engine] Perspective appliquée : {name}")
 
         except Exception as e:
-            print(f"[Engine] Erreur : {e}")
+            print(f"[Engine] Erreur lors de l'application de '{name}' : {e}")
 
         finally:
             main_win.setUpdatesEnabled(True)
 
     def _hide_all(self):
-        """Cache tous les docks et toolbars — respecte les liaisons."""
-        from .plugin_discovery import is_valid
+        """
+        Cache tous les docks et toolbars de l'interface QGIS.
 
+        Respecte les exclusions :
+
+        - :data:`EXCLUDED_TOOLBARS` — jamais cachées.
+        - :data:`LINKED_TOOLBARS` — gérées automatiquement par leur dock.
+
+        Les docks liés à une toolbar (via :meth:`_connect_dock_toolbar_links`)
+        propagent automatiquement leur visibilité à leur toolbar associée.
+        """
         for plugin_data in self.registry.values():
 
-            # ── Cacher les docks ──────────────────
+            # Cacher les docks
             for dock_info in plugin_data.get("docks", []):
                 dock = dock_info["object"]
                 if not is_valid(dock):
                     continue
                 try:
                     dock.setVisible(False)
-                    # ← les toolbars liées suivent automatiquement
-                    #   via visibilityChanged connecté dans
-                    #   _connect_dock_toolbar_links()
                 except RuntimeError:
                     pass
 
-            # ── Cacher les toolbars ───────────────
+            # Cacher les toolbars
             for tb_info in plugin_data.get("toolbars", []):
                 tb = tb_info["object"]
 
-                # Skip toolbar du plugin
                 if tb_info["name"] in EXCLUDED_TOOLBARS:
                     continue
 
-                # Skip toolbars liées — gérées par leur dock
                 if tb_info["name"] in LINKED_TOOLBARS:
                     continue
 
@@ -222,166 +347,123 @@ class PerspectiveEngine(QObject):
                 except RuntimeError:
                     pass
 
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
     # PERSPECTIVES — SAUVEGARDER
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
 
     def save(self, name: str):
         """
-        Capture l'état courant de l'interface
-        et le sauvegarde comme perspective.
+        Capture l'état courant de l'interface QGIS et le sauvegarde.
+
+        :param name: Nom de la perspective à mettre à jour.
+        :type name: str
         """
         data = self.state_capture.capture(name)
         self.config_io.save(name, data)
-        print(f"[Engine] Perspective sauvegardée : {name}")
 
     def save_from_data(self, name: str, data: dict):
         """
-        Sauvegarde une perspective depuis un dict
-        (construit par l'éditeur UI).
+        Sauvegarde une perspective depuis un dictionnaire.
+
+        Utilisé par l'interface utilisateur après modification
+        manuelle via :class:`~perspective_manager.ui.main_window.MainWindow`.
+
+        :param name: Nom de la perspective.
+        :type name: str
+        :param data: Dictionnaire complet de la perspective.
+        :type data: dict
         """
         self.config_io.save(name, data)
 
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
     # PERSPECTIVES — SUPPRIMER / RENOMMER
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
 
     def delete(self, name: str):
-        """Supprime une perspective."""
+        """
+        Supprime une perspective.
+
+        Réinitialise :attr:`current_perspective` si la perspective
+        supprimée était la perspective active.
+
+        :param name: Nom de la perspective à supprimer.
+        :type name: str
+        """
         self.config_io.delete(name)
         if self.current_perspective == name:
             self.current_perspective = None
 
     def rename(self, old_name: str, new_name: str):
-        """Renomme une perspective."""
+        """
+        Renomme une perspective.
+
+        Met à jour :attr:`current_perspective` si la perspective
+        renommée était la perspective active.
+
+        :param old_name: Nom actuel de la perspective.
+        :type old_name: str
+        :param new_name: Nouveau nom de la perspective.
+        :type new_name: str
+        """
         self.config_io.rename(old_name, new_name)
         if self.current_perspective == old_name:
             self.current_perspective = new_name
 
-    # ─────────────────────────────────────────
-    # CAPTURE ÉTAT COURANT
-    # ─────────────────────────────────────────
-
-    def _capture_current_state(self, name: str) -> dict:
-        """
-        Photographie l'état actuel de tous les
-        docks et toolbars dans le registre.
-        """
-        data = {"name": name, "plugins": {}}
-        main_win = iface.mainWindow()
-
-        for plugin_name, plugin_data in self.registry.items():
-            docks_state = []
-            toolbars_state = []
-
-            for dock_info in plugin_data.get("docks", []):
-                dock = dock_info["object"]
-                area = main_win.dockWidgetArea(dock)
-                docks_state.append({
-                    "name":    dock_info["name"],
-                    "label":   dock_info["label"],
-                    "visible": dock.isVisible(),
-                    "area":    self.discovery._area_to_str(area),
-                })
-
-            for tb_info in plugin_data.get("toolbars", []):
-                tb = tb_info["object"]
-                area = main_win.toolBarArea(tb)
-                toolbars_state.append({
-                    "name":    tb_info["name"],
-                    "label":   tb_info["label"],
-                    "visible": tb.isVisible(),
-                    "area":    self.discovery._area_to_str(area),
-                })
-
-            if docks_state or toolbars_state:
-                data["plugins"][plugin_name] = {
-                    "docks":    docks_state,
-                    "toolbars": toolbars_state,
-                }
-
-        return data
-
-    # ─────────────────────────────────────────
-    # APPLIQUER DOCK / TOOLBAR
-    # ─────────────────────────────────────────
-
-    def _apply_dock(self, dock: QDockWidget, config: dict):
-        """Applique la config sur un QDockWidget."""
-        main_win = iface.mainWindow()
-        area = self.discovery.str_to_area(config.get("area", "left"))
-
-        # Réancrer si flottant
-        if dock.isFloating():
-            dock.setFloating(False)
-
-        main_win.addDockWidget(area, dock)
-        dock.setVisible(config.get("visible", True))
-
-    def _apply_toolbar(self, toolbar: QToolBar, config: dict):
-        """Applique la config sur une QToolBar."""
-        main_win = iface.mainWindow()
-        area_str = config.get("area", "top")
-
-        area_map = {
-            "top":    Qt.TopToolBarArea,
-            "bottom": Qt.BottomToolBarArea,
-            "left":   Qt.LeftToolBarArea,
-            "right":  Qt.RightToolBarArea,
-        }
-        area = area_map.get(area_str, Qt.TopToolBarArea)
-
-        if toolbar.isFloating():
-            toolbar.setFloating(False)
-
-        main_win.addToolBar(area, toolbar)
-        toolbar.setVisible(config.get("visible", True))
-
-    # ─────────────────────────────────────────
-    # RECHERCHE WIDGETS
-    # ─────────────────────────────────────────
-
-    def _find_dock(self, name: str):
-        """Cherche un QDockWidget par nom dans le registre."""
-        for plugin_data in self.registry.values():
-            for dock_info in plugin_data.get("docks", []):
-                if dock_info["name"] == name:
-                    return dock_info["object"]
-        return None
-
-    def _find_toolbar(self, name: str):
-        """Cherche une QToolBar par nom dans le registre."""
-        for plugin_data in self.registry.values():
-            for tb_info in plugin_data.get("toolbars", []):
-                if tb_info["name"] == name:
-                    return tb_info["object"]
-        return None
-
-    # ─────────────────────────────────────────
-    # ACCÈS REGISTRE (pour l'UI)
-    # ─────────────────────────────────────────
+    # ─────────────────────────────────────────────
+    # ACCÈS REGISTRE
+    # ─────────────────────────────────────────────
 
     def get_registry(self) -> dict:
-        """Retourne le registre pour alimenter l'éditeur UI."""
+        """
+        Retourne le registre des widgets découverts.
+
+        Utilisé par l'interface utilisateur pour alimenter
+        les arbres de docks et toolbars.
+
+        :return: Registre des plugins et leurs widgets.
+        :rtype: dict
+        """
         return self.registry
 
     def get_current_perspective(self) -> str:
-        """Retourne le nom de la perspective active."""
-        return self.current_perspective
-    
+        """
+        Retourne le nom de la perspective actuellement active.
 
-    # ─────────────────────────────────────────
-    # LIAISON DOCK ↔ TOOLBAR  ← ajouter ici
-    # ─────────────────────────────────────────
+        :return: Nom de la perspective active, ou ``None``.
+        :rtype: str or None
+        """
+        return self.current_perspective
+
+    # ─────────────────────────────────────────────
+    # LIAISONS DOCK ↔ TOOLBAR
+    # ─────────────────────────────────────────────
 
     def _connect_dock_toolbar_links(self):
-        from qgis.PyQt.QtWidgets import QDockWidget, QToolBar
-        from qgis.utils import iface
+        """
+        Connecte les signaux Qt pour synchroniser la visibilité
+        des toolbars liées à leur dock associé.
 
+        Quand un dock est affiché ou caché, sa toolbar liée
+        suit automatiquement via le signal ``visibilityChanged``.
+
+        **Liaisons configurées :**
+
+        .. code-block:: text
+
+            Browser              → mBrowserToolbar
+            Browser2             → mBrowserToolbar
+            AdvancedDigitizingTools → mAdvancedDigitizeToolBar
+            GPSInformation       → mGpsToolBar
+            BookmarksDockWidget  → mBookmarkToolbar
+            ProcessingToolbox    → processingToolbar
+
+        .. note::
+            Les connexions existantes sont déconnectées avant
+            reconnexion pour éviter les doublons.
+        """
         main_win = iface.mainWindow()
 
         LINKS = {
-            #"Layers":                  "mLayerToolBar",
             "Browser":                 "mBrowserToolbar",
             "Browser2":                "mBrowserToolbar",
             "AdvancedDigitizingTools": "mAdvancedDigitizeToolBar",
@@ -390,14 +472,14 @@ class PerspectiveEngine(QObject):
             "ProcessingToolbox":       "processingToolbar",
         }
 
-        # Index toolbars — première occurrence uniquement
+        # Construire l'index des toolbars (première occurrence uniquement)
         toolbar_index = {}
         for tb in main_win.findChildren(QToolBar):
             name = tb.objectName()
             if name and name not in toolbar_index:
                 toolbar_index[name] = tb
 
-        # Index docks
+        # Construire l'index des docks
         dock_index = {}
         for dock in main_win.findChildren(QDockWidget):
             name = dock.objectName()
@@ -417,9 +499,3 @@ class PerspectiveEngine(QObject):
                 dock.visibilityChanged.connect(
                     lambda visible, tb=toolbar: tb.setVisible(visible)
                 )
-                print(f"[Engine] Lien : {dock_name} → {toolbar_name}")
-            else:
-                if not dock:
-                    print(f"[Engine] Dock introuvable : {dock_name}")
-                if not toolbar:
-                    print(f"[Engine] Toolbar introuvable : {toolbar_name}")
