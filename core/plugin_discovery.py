@@ -97,10 +97,36 @@ class PluginDiscovery:
         native_docks    = []
         native_toolbars = []
 
+        # Collecter d'abord les toolbars des plugins tiers
+        plugin_toolbar_names = set()
+        for plugin_name, plugin_instance in plugins.items():
+            if plugin_name == "perspective_manager":
+                continue
+            # Stratégie 1 — attribut toolbar
+            if hasattr(plugin_instance, 'toolbar'):
+                try:
+                    tb = plugin_instance.toolbar
+                    if isinstance(tb, QToolBar) and tb.objectName():
+                        plugin_toolbar_names.add(tb.objectName())
+                except Exception:
+                    pass
+            # Stratégie 2 — attribut toolbars
+            if hasattr(plugin_instance, 'toolbars'):
+                try:
+                    for tb in plugin_instance.toolbars:
+                        if isinstance(tb, QToolBar) and tb.objectName():
+                            plugin_toolbar_names.add(tb.objectName())
+                except Exception:
+                    pass
+
+        # Scanner les widgets natifs en excluant les toolbars plugins
         for dock in main_win.findChildren(QDockWidget):
             native_docks.append(self._describe_dock(dock))
 
         for toolbar in main_win.findChildren(QToolBar):
+            # ← exclure les toolbars des plugins tiers
+            if toolbar.objectName() in plugin_toolbar_names:
+                continue
             native_toolbars.append(self._describe_toolbar(toolbar))
 
         if native_docks or native_toolbars:

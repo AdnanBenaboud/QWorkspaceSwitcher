@@ -33,7 +33,7 @@ from qgis.PyQt.QtWidgets import (
     QMenu, QInputDialog, QMessageBox
 )
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, QTimer
 
 from .core.perspective_engine import PerspectiveEngine
 from .core.plugin_discovery import is_valid
@@ -145,7 +145,6 @@ class PerspectiveManager:
         - Supprime la toolbar.
         - Ferme la :class:`MainWindow` si ouverte.
         """
-        # Toujours restaurer la barre de menus à la désinstallation
         self.iface.mainWindow().menuBar().setVisible(True)
 
         self.iface.removePluginMenu(
@@ -153,6 +152,7 @@ class PerspectiveManager:
         )
         if self.toolbar:
             self.toolbar.deleteLater()
+            self.toolbar = None
         if self.main_window:
             self.main_window.close()
         del self.action_open
@@ -180,6 +180,21 @@ class PerspectiveManager:
     # TOOLBAR
     # ─────────────────────────────────────────────
 
+    def _is_toolbar_valid(self) -> bool:
+        """
+        Vérifie que la toolbar Qt est encore valide en mémoire.
+
+        :return: ``True`` si la toolbar est valide, ``False`` sinon.
+        :rtype: bool
+        """
+        if self.toolbar is None:
+            return False
+        try:
+            self.toolbar.objectName()
+            return True
+        except RuntimeError:
+            return False
+
     def _refresh_toolbar(self):
         """
         Recrée tous les boutons de perspectives dans la toolbar.
@@ -201,8 +216,16 @@ class PerspectiveManager:
           bouton avec flèche ``▼`` (``MenuButtonPopup``).
         - Sinon → bouton simple (``DelayedPopup``).
         """
-        for action in self.perspective_actions.values():
-            self.toolbar.removeAction(action)
+        if not self._is_toolbar_valid():
+            return
+
+        # Retirer les anciens boutons
+        for action in list(self.perspective_actions.values()):
+            try:
+                self.toolbar.removeAction(action)
+            except RuntimeError:
+                pass
+
         self.perspective_actions.clear()
         self.perspective_buttons.clear()
 
@@ -261,16 +284,35 @@ class PerspectiveManager:
         """
         Appelé quand ``user.psp.json`` est modifié depuis l'extérieur.
 
-        Rafraîchit la toolbar et met à jour la
-        :class:`MainWindow` si elle est visible.
+        Utilise un délai via :class:`QTimer` pour éviter les conflits
+        avec les opérations d'écriture en cours sur la toolbar Qt.
         """
-        self._refresh_toolbar()
+        QTimer.singleShot(300, self._safe_refresh)
+
+    def _safe_refresh(self):
+        """
+        Rafraîchit la toolbar et la MainWindow de manière sécurisée.
+
+        Vérifie la validité de la toolbar avant toute opération.
+        Protège contre les erreurs Qt si la toolbar a été détruite.
+        """
+        if not self._is_toolbar_valid():
+            return
+
+        try:
+            self._refresh_toolbar()
+        except RuntimeError as e:
+            print(f"[Plugin] Erreur refresh toolbar : {e}")
+            return
 
         if self.main_window and self.main_window.isVisible():
-            self.main_window._refresh_list()
-            current = self.main_window.inputName.text().strip()
-            if current:
-                self.main_window._load_perspective_in_tree(current)
+            try:
+                self.main_window._refresh_list()
+                current = self.main_window.inputName.text().strip()
+                if current:
+                    self.main_window._load_perspective_in_tree(current)
+            except RuntimeError as e:
+                print(f"[Plugin] Erreur refresh MainWindow : {e}")
 
     def _on_perspective_changed(self, name: str):
         """
@@ -286,7 +328,10 @@ class PerspectiveManager:
         if name == "__reload__":
             return
         for perspective_name, btn in self.perspective_buttons.items():
-            btn.setChecked(perspective_name == name)
+            try:
+                btn.setChecked(perspective_name == name)
+            except RuntimeError:
+                pass
 
     # ─────────────────────────────────────────────
     # MENU DROPDOWN
@@ -394,12 +439,10 @@ class PerspectiveManager:
                 copied_menu.addSeparator()
 
             elif action.menu():
-                # Sous-menu → récursion
                 sub = self._copy_menu(action.menu(), copied_menu)
                 copied_menu.addMenu(sub)
 
             else:
-                # Action simple → déléguer au trigger original
                 new_action = QAction(
                     action.icon(),
                     action.text(),
@@ -440,9 +483,6 @@ class PerspectiveManager:
     def _duplicate_perspective(self, name: str):
         """
         Duplique une perspective depuis la toolbar.
-
-        Demande un nouveau nom, copie la perspective et
-        rafraîchit la toolbar et la :class:`MainWindow`.
 
         :param name: Nom de la perspective à dupliquer.
         :type name: str

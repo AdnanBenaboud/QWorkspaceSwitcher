@@ -99,10 +99,10 @@ class ConfigIO(QObject):
 
         os.makedirs(self.base_dir, exist_ok=True)
 
-        # Source unique de vérité — construite depuis toutes les sources
+        # Source unique de vérité
         self._cfg = self._build_cfg()
 
-        # Surveillance des modifications externes de user.psp.json
+        # Surveillance des modifications externes
         self._watcher = QFileSystemWatcher()
         self._watcher.addPath(self.config_path)
         self._watcher.fileChanged.connect(self._on_file_changed)
@@ -138,7 +138,6 @@ class ConfigIO(QObject):
         lst_cfg     = [CONFIG_DEFAULT]
         plugins_dir = os.path.dirname(os.path.dirname(self.base_dir))
 
-        # Scanner les fichiers .psp.json des plugins installés
         psp_files = sorted(glob.glob(
             os.path.join(plugins_dir, "*", "*.psp.json")
         ))
@@ -148,14 +147,11 @@ class ConfigIO(QObject):
                 continue
             lst_cfg.append(fic)
 
-        # Créer la Configuration fusionnée
         cfg = Configuration(
             lst_cfg=lst_cfg,
             fic_sav=self.config_path
         )
 
-        # Corriger la fusion des listes de perspectives
-        # (_deep_update écrase les listes au lieu de les fusionner)
         merged = self._merge_perspectives(lst_cfg + [self.config_path])
         cfg.cfg["perspectives"] = merged
 
@@ -168,6 +164,9 @@ class ConfigIO(QObject):
         Les perspectives utilisateur (``user.psp.json``) sont prioritaires
         sur celles des plugins. En cas de nom identique, la version
         utilisateur écrase la version plugin.
+
+        Les perspectives présentes dans ``deleted_perspectives`` de
+        ``user.psp.json`` sont exclues du résultat.
 
         **Ordre dans la liste retournée :**
 
@@ -184,13 +183,23 @@ class ConfigIO(QObject):
 
         .. code-block:: text
 
-            georelai.psp.json → [Saisie terrain, Visualisation]
-            user.psp.json     → [QGIS, Saisie terrain (modifiée)]
+            georelai.psp.json → [Modélisation, Visualisation]
+            user.psp.json     → [QGIS, Visualisation (modifiée)]
 
-            Résultat → [QGIS, Saisie terrain (user), Visualisation]
+            Résultat → [QGIS, Modélisation (user), Visualisation]
         """
         if not lst_cfg:
             return []
+
+        # Lire la liste noire depuis user.psp.json
+        deleted = []
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    user_data = json.load(f)
+                deleted = user_data.get("deleted_perspectives", [])
+        except Exception:
+            pass
 
         user_perspectives   = {}
         plugin_perspectives = {}
@@ -224,16 +233,16 @@ class ConfigIO(QObject):
                 name = p.get("name")
                 if not name:
                     continue
+                if name in deleted:  # ← respecter la liste noire
+                    continue
                 if is_user:
                     user_perspectives[name]   = p
                 else:
                     plugin_perspectives[name] = p
 
         # Fusionner : user écrase les plugins si même nom
-        result = dict(plugin_perspectives)
+        result       = dict(plugin_perspectives)
         result.update(user_perspectives)
-
-        # Ordonner : user d'abord, plugins non surchargés ensuite
         user_names   = list(user_perspectives.keys())
         plugin_names = [
             n for n in plugin_perspectives
@@ -254,9 +263,12 @@ class ConfigIO(QObject):
         :type path: str
         """
         if self._writing:
-            return
+            # ← modification interne → re-ajouter au watcher seulement
+            if os.path.exists(path) and path not in self._watcher.files():
+                self._watcher.addPath(path)
+            return  # ← NE PAS reconstruire self._cfg
 
-        # Re-ajouter au watcher si certains éditeurs recréent le fichier
+        # Modification externe → reconstruire
         if os.path.exists(path) and path not in self._watcher.files():
             self._watcher.addPath(path)
 
@@ -341,7 +353,6 @@ class ConfigIO(QObject):
             data["name"]  = name
             perspectives  = self._cfg.get("perspectives", [])
 
-            # Mise à jour si la perspective existe déjà
             for i, p in enumerate(perspectives):
                 if p["name"] == name:
                     perspectives[i] = data
@@ -350,7 +361,6 @@ class ConfigIO(QObject):
                     self._write_user_from_cfg()
                     return
 
-            # Nouvelle perspective
             if name == "QGIS":
                 perspectives.insert(0, data)
             else:
@@ -360,8 +370,11 @@ class ConfigIO(QObject):
             self._cfg.sgl_unsaved.emit()
             self._write_user_from_cfg()
 
+        except Exception as e:
+            print(f"[ConfigIO] Erreur save : {e}")
+
         finally:
-            self._writing = False
+            self._writing = False  # ← simple et direct
 
     def delete(self, name: str):
         """
@@ -382,7 +395,7 @@ class ConfigIO(QObject):
         """
         self._writing = True
         try:
-            # ── Supprimer de self._cfg — effet immédiat ──
+            # Supprimer de self._cfg — effet immédiat
             perspectives = [
                 p for p in self._cfg.get("perspectives", [])
                 if p["name"] != name
@@ -390,17 +403,15 @@ class ConfigIO(QObject):
             self._cfg["perspectives"] = perspectives
             self._cfg.sgl_unsaved.emit()
 
-            # ── Persister dans user.psp.json ─────────────
+            # Persister dans user.psp.json
             user_data = self._read_user()
 
-            # Retirer de la liste des perspectives user
             user_data["perspectives"] = [
                 p for p in user_data.get("perspectives", [])
                 if p["name"] != name
             ]
 
             # Si perspective plugin → ajouter à la liste noire
-            # pour éviter qu'elle réapparaisse au prochain démarrage
             if name in self.get_plugin_perspectives():
                 deleted = user_data.get("deleted_perspectives", [])
                 if name not in deleted:
@@ -451,7 +462,8 @@ class ConfigIO(QObject):
 
         :param name: Nom de la nouvelle perspective.
         :type name: str
-        :return: ``True`` si créée avec succès, ``False`` si le nom existe déjà.
+        :return: ``True`` si créée avec succès,
+            ``False`` si le nom existe déjà.
         :rtype: bool
 
         :exemple:
@@ -571,19 +583,21 @@ class ConfigIO(QObject):
         Les perspectives des plugins sont incluses uniquement si elles
         ont été modifiées par l'utilisateur (overrides).
 
+        Préserve ``deleted_perspectives`` depuis le fichier existant.
+
         **Logique :**
 
         - Perspective non-plugin → toujours écrite.
-        - Perspective plugin non modifiée → ignorée (reste dans le ``.psp.json`` du plugin).
-        - Perspective plugin modifiée → écrite comme override dans ``user.psp.json``.
+        - Perspective plugin non modifiée → ignorée.
+        - Perspective plugin modifiée → écrite comme override.
+        - ``deleted_perspectives`` → toujours préservé.
         """
         plugin_perspectives  = self.get_plugin_perspectives()
         original_plugin_data = {}
 
-        # Charger les versions originales des plugins pour détecter les overrides
+        # Charger les versions originales pour détecter les overrides
         plugins_dir = os.path.dirname(os.path.dirname(self.base_dir))
         for name, plugin_name in plugin_perspectives.items():
-            # Chercher le fichier .psp.json du plugin
             psp_files = glob.glob(
                 os.path.join(plugins_dir, plugin_name, "*.psp.json")
             )
@@ -599,7 +613,7 @@ class ConfigIO(QObject):
             except Exception:
                 pass
 
-        # Construire la liste à écrire dans user.psp.json
+        # Construire la liste à écrire
         user_perspectives = []
         for p in self._cfg.get("perspectives", []):
             name = p.get("name")
@@ -607,9 +621,19 @@ class ConfigIO(QObject):
                 # Perspective utilisateur → toujours écrire
                 user_perspectives.append(p)
             else:
-                # Perspective plugin → écrire seulement si modifiée (override)
+                # Perspective plugin → écrire seulement si modifiée
                 original = original_plugin_data.get(name)
                 if original and p != original:
                     user_perspectives.append(p)
 
-        self._write_user({"perspectives": user_perspectives})
+        # Construire le dictionnaire final
+        user_data = {"perspectives": user_perspectives}
+
+        # Préserver deleted_perspectives depuis le fichier existant
+        existing_user = self._read_user()
+        if "deleted_perspectives" in existing_user:
+            user_data["deleted_perspectives"] = existing_user[
+                "deleted_perspectives"
+            ]
+
+        self._write_user(user_data)
