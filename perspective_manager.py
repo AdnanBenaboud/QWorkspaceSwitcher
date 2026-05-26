@@ -50,7 +50,7 @@ class PerspectiveManager:
     **Responsabilités :**
 
     - Initialiser et décharger le plugin (``initGui`` / ``unload``).
-    - Créer et maintenir la toolbar ``PerspectiveManagerToolbar``.
+    - Créer et maintenir la toolbar ``QWorkspace Switcher``.
     - Créer un bouton :class:`QToolButton` par perspective.
     - Ouvrir :class:`~perspective_manager.ui.main_window.MainWindow`
       à la demande.
@@ -86,7 +86,7 @@ class PerspectiveManager:
         Initialise l'interface graphique du plugin.
 
         - Crée et initialise le :class:`PerspectiveEngine`.
-        - Crée la toolbar ``PerspectiveManagerToolbar``.
+        - Crée la toolbar ``QWorkspaceSwitcher``.
         - Ajoute l'action d'ouverture de la :class:`MainWindow`.
         - Crée les boutons de perspectives via :meth:`_refresh_toolbar`.
         - Connecte les signaux de changement de perspective et de
@@ -98,8 +98,8 @@ class PerspectiveManager:
         self.engine.initialize()
 
         # Créer la toolbar principale
-        self.toolbar = QToolBar("Gestionnaire de Perspectives")
-        self.toolbar.setObjectName("PerspectiveManagerToolbar")
+        self.toolbar = QToolBar("QWorkspace Switcher")
+        self.toolbar.setObjectName("QWorkspace Switcher")
         self.iface.addToolBar(self.toolbar)
 
         # Bouton d'ouverture de la MainWindow
@@ -111,7 +111,7 @@ class PerspectiveManager:
         self.action_open.triggered.connect(self.run)
         self.toolbar.addAction(self.action_open)
         self.iface.addPluginToMenu(
-            "Gestionnaire de Perspectives", self.action_open
+            "QWorkspace Switcher", self.action_open
         )
 
         self.toolbar.addSeparator()

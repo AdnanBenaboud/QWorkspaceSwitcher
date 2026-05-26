@@ -103,16 +103,16 @@ class MainWindow(QDialog, FORM_CLASS):
         """
         super().__init__(parent)
         self.setupUi(self)
-        self.setWindowTitle("Gestionnaire de Perspectives")
+        self.setWindowTitle("QWorkspace Switcher")
         self.engine             = engine
         self._current_icon_path = ""
 
         # Connecter les signaux Configuration pour l'indicateur titre
         self.engine.config_io._cfg.sgl_unsaved.connect(
-            lambda: self.setWindowTitle("Gestionnaire de Perspectives *")
+            lambda: self.setWindowTitle("QWorkspace Switcher *")
         )
         self.engine.config_io._cfg.sgl_saved.connect(
-            lambda: self.setWindowTitle("Gestionnaire de Perspectives")
+            lambda: self.setWindowTitle("QWorkspace Switcher")
         )
 
         # Construire les widgets dynamiques avant _set_editor_visible
@@ -876,14 +876,37 @@ class MainWindow(QDialog, FORM_CLASS):
         y ajoute les métadonnées (style, icône, barre de menus, menus
         dropdown) et délègue à :meth:`PerspectiveEngine.save_from_data`.
         """
-        name = self.inputName.text().strip()
-        if not name:
+        new_name = self.inputName.text().strip()
+        if not new_name:
             QMessageBox.warning(self, "Attention", "Donne un nom.")
             return
 
-        data = self._build_data_from_tree(name)
+        # ← Récupérer le nom original depuis la liste
+        current_item = self.listPerspectives.currentItem()
+        if not current_item:
+            QMessageBox.warning(
+                self, "Attention",
+                "Sélectionne une perspective."
+            )
+            return
 
-        # Style et icône
+        old_name = current_item.text()
+
+        # ── Cas 1 — Le nom a changé → renommer d'abord ──
+        if new_name != old_name:
+            # Vérifier que le nouveau nom n'existe pas déjà
+            if new_name in self.engine.list_perspectives():
+                QMessageBox.warning(
+                    self, "Nom existant",
+                    f"Une perspective '{new_name}' existe déjà."
+                )
+                return
+            # Renommer dans self._cfg et user.psp.json
+            self.engine.rename(old_name, new_name)
+
+        # ── Cas 2 — Sauvegarder la configuration ────────
+        data = self._build_data_from_tree(new_name)
+
         if self.checkBox_icon.isChecked():
             data["button_style"] = self.comboBox_emplacement.currentText()
             data["icon"]         = self._current_icon_path
@@ -891,23 +914,29 @@ class MainWindow(QDialog, FORM_CLASS):
             data["button_style"] = "text"
             data["icon"]         = ""
 
-        # Barre de menus QGIS
         data["show_menu_bar"] = self.checkBox_menuBar.isChecked()
-
-        # Menus dropdown
         data["dropdown_menus"] = (
             self._get_selected_menus()
             if self.checkBox_ajoutMenu.isChecked()
             else []
         )
 
-        self.engine.save_from_data(name, data)
+        self.engine.save_from_data(new_name, data)
         self._refresh_list()
         self.perspectiveSaved.emit()
 
+        # ── Mettre à jour la sélection dans la liste ────
+        items = self.listPerspectives.findItems(
+            new_name, Qt.MatchExactly
+        )
+        if items:
+            self.listPerspectives.blockSignals(True)
+            self.listPerspectives.setCurrentItem(items[0])
+            self.listPerspectives.blockSignals(False)
+
         QMessageBox.information(
             self, "Sauvegardé",
-            f"Perspective '{name}' sauvegardée ✓"
+            f"Perspective '{new_name}' sauvegardée ✓"
         )
 
     def _get_selected_menus(self) -> list:
