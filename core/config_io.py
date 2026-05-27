@@ -1,37 +1,37 @@
 # coding: utf-8
 
 """
-Module de gestion des entrées/sorties de configuration des perspectives.
+Configuration input/output management module for workspaces.
 
-Ce module fournit la classe :class:`ConfigIO`, couche d'accès aux données
-du plugin Gestionnaire de Perspectives. Elle s'appuie sur
-:class:`~perspective_manager.core.configuration.Configuration` comme
-source unique de vérité en mémoire (``self._cfg``), et synchronise
-les modifications vers ``user.psp.json``.
+This module provides the :class:`ConfigIO` class, the data access layer
+of the QWorkspace Switcher plugin. It relies on
+:class:`~perspective_manager.core.configuration.Configuration` as the
+single source of truth in memory (``self._cfg``), and synchronizes
+changes to ``user.psp.json``.
 
-**Architecture des sources de configuration :**
+**Configuration source architecture:**
 
 .. code-block:: text
 
-    CONFIG_DEFAULT              (priorité la plus faible)
+    CONFIG_DEFAULT              (lowest priority)
         ↓
-    plugin_a/plugin_a.psp.json  (perspectives déclarées par plugin_a)
+    plugin_a/plugin_a.psp.json  (workspaces declared by plugin_a)
         ↓
-    plugin_b/plugin_b.psp.json  (perspectives déclarées par plugin_b)
+    plugin_b/plugin_b.psp.json  (workspaces declared by plugin_b)
         ↓
-    perspectives/user.psp.json  (perspectives utilisateur — priorité maximale)
+    perspectives/user.psp.json  (user workspaces — highest priority)
         ↓
-    self._cfg                   (dictionnaire fusionné en mémoire)
+    self._cfg                   (merged dictionary in memory)
 
-**Principe de fonctionnement :**
+**How it works:**
 
-- Au démarrage, :meth:`_build_cfg` scanne tous les fichiers ``*.psp.json``
-  des plugins QGIS installés et les fusionne avec ``user.psp.json``.
-- Pendant la session, toutes les opérations (lecture, écriture, suppression)
-  passent exclusivement par ``self._cfg`` — aucune lecture fichier.
-- Chaque modification met à jour ``self._cfg`` puis écrit ``user.psp.json``.
-- Un :class:`QFileSystemWatcher` détecte les modifications externes du fichier
-  et reconstruit ``self._cfg`` automatiquement.
+- At startup, :meth:`_build_cfg` scans all ``*.psp.json`` files
+  from installed QGIS plugins and merges them with ``user.psp.json``.
+- During the session, all operations (read, write, delete)
+  go exclusively through ``self._cfg`` — no file reading.
+- Each modification updates ``self._cfg`` then writes ``user.psp.json``.
+- A :class:`QFileSystemWatcher` detects external file modifications
+  and automatically rebuilds ``self._cfg``.
 
 :author: Adnan Benaboud — CNR
 """
@@ -45,51 +45,51 @@ from qgis.PyQt.QtCore import QObject, pyqtSignal, QFileSystemWatcher
 from .configuration import Configuration
 
 
-#: Configuration par défaut — liste de perspectives vide.
+#: Default configuration — empty workspace list.
 CONFIG_DEFAULT = {"perspectives": []}
 
 
 class ConfigIO(QObject):
     """
-    Gestionnaire d'entrées/sorties pour les perspectives du plugin.
+    Input/output manager for plugin workspaces.
 
-    Fournit une API unifiée pour lire, créer, modifier et supprimer
-    des perspectives. S'appuie sur :class:`Configuration` comme source
-    unique de vérité en mémoire.
+    Provides a unified API to read, create, modify and delete
+    workspaces. Relies on :class:`Configuration` as the single
+    source of truth in memory.
 
-    **Fichiers gérés :**
+    **Managed files:**
 
-    - ``perspectives/user.psp.json`` — perspectives créées par l'utilisateur.
-    - ``<plugin>/<plugin>.psp.json`` — perspectives déclarées par les plugins
-      (lecture seule, chargées au démarrage).
+    - ``perspectives/user.psp.json`` — workspaces created by the user.
+    - ``<plugin>/<plugin>.psp.json`` — workspaces declared by plugins
+      (read-only, loaded at startup).
 
-    **Signaux :**
+    **Signals:**
 
-    - :attr:`configChanged` — émis quand ``user.psp.json`` est modifié
-      depuis l'extérieur (ex. éditeur de texte).
+    - :attr:`configChanged` — emitted when ``user.psp.json`` is modified
+      from outside (e.g. text editor).
 
-    :exemple:
+    :example:
 
     .. code-block:: python
 
         config_io = ConfigIO()
-        data      = config_io.load("Saisie terrain")
-        config_io.save("Saisie terrain", data)
+        data      = config_io.load("Field survey")
+        config_io.save("Field survey", data)
     """
 
     configChanged = pyqtSignal()
-    """Signal émis quand ``user.psp.json`` est modifié depuis l'extérieur."""
+    """Signal emitted when ``user.psp.json`` is modified from outside."""
 
     CONFIG_FILE = "user.psp.json"
-    """Nom du fichier de configuration utilisateur."""
+    """Name of the user configuration file."""
 
     def __init__(self):
         """
-        Initialise le gestionnaire de configuration.
+        Initialize the configuration manager.
 
-        - Crée le répertoire ``perspectives/`` si nécessaire.
-        - Construit ``self._cfg`` depuis toutes les sources disponibles.
-        - Démarre le :class:`QFileSystemWatcher` sur ``user.psp.json``.
+        - Creates the ``perspectives/`` directory if necessary.
+        - Builds ``self._cfg`` from all available sources.
+        - Starts the :class:`QFileSystemWatcher` on ``user.psp.json``.
         """
         super().__init__()
 
@@ -99,23 +99,23 @@ class ConfigIO(QObject):
 
         os.makedirs(self.base_dir, exist_ok=True)
 
-        # Source unique de vérité
+        # Single source of truth
         self._cfg = self._build_cfg()
 
-        # Surveillance des modifications externes
+        # Watch for external modifications
         self._watcher = QFileSystemWatcher()
         self._watcher.addPath(self.config_path)
         self._watcher.fileChanged.connect(self._on_file_changed)
 
     # ─────────────────────────────────────────────
-    # INITIALISATION
+    # INITIALIZATION
     # ─────────────────────────────────────────────
 
     def _get_base_dir(self) -> str:
         """
-        Retourne le chemin du répertoire de stockage des perspectives.
+        Return the path to the workspace storage directory.
 
-        :return: Chemin absolu vers ``<plugin_dir>/perspectives/``.
+        :return: Absolute path to ``<plugin_dir>/perspectives/``.
         :rtype: str
         """
         plugin_dir = os.path.dirname(os.path.dirname(__file__))
@@ -123,16 +123,16 @@ class ConfigIO(QObject):
 
     def _build_cfg(self) -> Configuration:
         """
-        Construit la source unique de vérité depuis toutes les sources.
+        Build the single source of truth from all sources.
 
-        Scanne tous les fichiers ``*.psp.json`` des plugins QGIS installés,
-        les fusionne avec ``user.psp.json`` via :class:`Configuration`,
-        puis corrige la fusion des listes de perspectives via
+        Scans all ``*.psp.json`` files from installed QGIS plugins,
+        merges them with ``user.psp.json`` via :class:`Configuration`,
+        then fixes the perspective list merge via
         :meth:`_merge_perspectives`.
 
-        Appelé au démarrage et lors d'un rechargement externe.
+        Called at startup and on external reload.
 
-        :return: Instance :class:`Configuration` fusionnée.
+        :return: Merged :class:`Configuration` instance.
         :rtype: Configuration
         """
         lst_cfg     = [CONFIG_DEFAULT]
@@ -159,39 +159,39 @@ class ConfigIO(QObject):
 
     def _merge_perspectives(self, lst_cfg: list) -> list:
         """
-        Fusionne les perspectives de toutes les sources par ordre de priorité.
+        Merge workspaces from all sources by priority order.
 
-        Les perspectives utilisateur (``user.psp.json``) sont prioritaires
-        sur celles des plugins. En cas de nom identique, la version
-        utilisateur écrase la version plugin.
+        User workspaces (``user.psp.json``) take priority over
+        plugin workspaces. In case of identical names, the user
+        version overrides the plugin version.
 
-        Les perspectives présentes dans ``deleted_perspectives`` de
-        ``user.psp.json`` sont exclues du résultat.
+        Workspaces listed in ``deleted_perspectives`` of
+        ``user.psp.json`` are excluded from the result.
 
-        **Ordre dans la liste retournée :**
+        **Order in the returned list:**
 
-        1. Perspectives utilisateur (``user.psp.json``) en premier.
-        2. Perspectives plugins non surchargées ensuite.
+        1. User workspaces (``user.psp.json``) first.
+        2. Non-overridden plugin workspaces next.
 
-        :param lst_cfg: Liste des sources — chaque élément est un
-            :class:`dict` ou un chemin vers un fichier JSON.
+        :param lst_cfg: List of sources — each element is a
+            :class:`dict` or a path to a JSON file.
         :type lst_cfg: list
-        :return: Liste fusionnée et ordonnée de perspectives.
+        :return: Merged and ordered list of workspaces.
         :rtype: list
 
-        :exemple:
+        :example:
 
         .. code-block:: text
 
-            georelai.psp.json → [Modélisation, Visualisation]
-            user.psp.json     → [QGIS, Visualisation (modifiée)]
+            georelai.psp.json → [Modeling, Visualization]
+            user.psp.json     → [QGIS, Visualization (modified)]
 
-            Résultat → [QGIS, Modélisation (user), Visualisation]
+            Result → [QGIS, Modeling, Visualization (user)]
         """
         if not lst_cfg:
             return []
 
-        # Lire la liste noire depuis user.psp.json
+        # Read blacklist from user.psp.json
         deleted = []
         try:
             if os.path.exists(self.config_path):
@@ -210,7 +210,9 @@ class ConfigIO(QObject):
 
             is_user = (
                 isinstance(source, str) and
-                os.path.normpath(source) == os.path.normpath(self.config_path)
+                os.path.normpath(source) == os.path.normpath(
+                    self.config_path
+                )
             )
 
             if isinstance(source, dict):
@@ -224,7 +226,7 @@ class ConfigIO(QObject):
                         data = json.load(f)
                     perspectives = data.get("perspectives", [])
                 except Exception as e:
-                    print(f"[ConfigIO] Erreur lecture {path} : {e}")
+                    print(f"[ConfigIO] Read error {path}: {e}")
                     perspectives = []
             else:
                 continue
@@ -233,14 +235,14 @@ class ConfigIO(QObject):
                 name = p.get("name")
                 if not name:
                     continue
-                if name in deleted:  # ← respecter la liste noire
+                if name in deleted:  # ← respect blacklist
                     continue
                 if is_user:
                     user_perspectives[name]   = p
                 else:
                     plugin_perspectives[name] = p
 
-        # Fusionner : user écrase les plugins si même nom
+        # Merge: user overrides plugins on name conflict
         result       = dict(plugin_perspectives)
         result.update(user_perspectives)
         user_names   = list(user_perspectives.keys())
@@ -253,22 +255,22 @@ class ConfigIO(QObject):
 
     def _on_file_changed(self, path: str):
         """
-        Appelé par :attr:`_watcher` quand ``user.psp.json`` est modifié.
+        Called by :attr:`_watcher` when ``user.psp.json`` is modified.
 
-        Ignore les modifications provenant du plugin lui-même (``_writing``).
-        Reconstruit ``self._cfg`` depuis toutes les sources et émet
-        :attr:`configChanged`.
+        Ignores modifications coming from the plugin itself
+        (``_writing`` flag). Rebuilds ``self._cfg`` from all sources
+        and emits :attr:`configChanged`.
 
-        :param path: Chemin du fichier modifié.
+        :param path: Path of the modified file.
         :type path: str
         """
         if self._writing:
-            # ← modification interne → re-ajouter au watcher seulement
+            # Internal modification → only re-add to watcher
             if os.path.exists(path) and path not in self._watcher.files():
                 self._watcher.addPath(path)
-            return  # ← NE PAS reconstruire self._cfg
+            return  # ← do NOT rebuild self._cfg
 
-        # Modification externe → reconstruire
+        # External modification → rebuild
         if os.path.exists(path) and path not in self._watcher.files():
             self._watcher.addPath(path)
 
@@ -276,25 +278,25 @@ class ConfigIO(QObject):
         self.configChanged.emit()
 
     # ─────────────────────────────────────────────
-    # API PUBLIQUE — tout passe par self._cfg
+    # PUBLIC API — everything goes through self._cfg
     # ─────────────────────────────────────────────
 
     def list_all(self) -> list:
         """
-        Retourne les noms de toutes les perspectives depuis ``self._cfg``.
+        Return the names of all workspaces from ``self._cfg``.
 
-        Inclut les perspectives utilisateur et celles des plugins.
+        Includes both user and plugin workspaces.
 
-        :return: Liste des noms de perspectives dans l'ordre d'affichage
-            (utilisateur en premier, plugins ensuite).
+        :return: List of workspace names in display order
+            (user first, plugins next).
         :rtype: list[str]
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
             names = config_io.list_all()
-            # → ['QGIS', 'test', 'Modélisation', 'qats']
+            # → ['QGIS', 'Field survey', 'Modeling', 'qats']
         """
         return [
             p["name"]
@@ -303,32 +305,32 @@ class ConfigIO(QObject):
 
     def list_all_merged(self) -> list:
         """
-        Alias de :meth:`list_all`.
+        Alias for :meth:`list_all`.
 
-        Conservé pour compatibilité avec les appels existants.
+        Kept for compatibility with existing calls.
 
-        :return: Liste des noms de toutes les perspectives.
+        :return: List of all workspace names.
         :rtype: list[str]
         """
         return self.list_all()
 
     def load(self, name: str) -> dict:
         """
-        Charge une perspective par son nom depuis ``self._cfg``.
+        Load a workspace by name from ``self._cfg``.
 
-        Aucune lecture fichier — opération en mémoire uniquement.
+        No file reading — in-memory operation only.
 
-        :param name: Nom de la perspective à charger.
+        :param name: Name of the workspace to load.
         :type name: str
-        :return: Dictionnaire complet de la perspective,
-            ou dictionnaire vide si introuvable.
+        :return: Complete workspace dictionary,
+            or empty dictionary if not found.
         :rtype: dict
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
-            data = config_io.load("Saisie terrain")
+            data     = config_io.load("Field survey")
             show_menu = data.get("show_menu_bar", True)
         """
         for p in self._cfg.get("perspectives", []):
@@ -338,14 +340,14 @@ class ConfigIO(QObject):
 
     def save(self, name: str, data: dict):
         """
-        Sauvegarde une perspective dans ``self._cfg`` et ``user.psp.json``.
+        Save a workspace to ``self._cfg`` and ``user.psp.json``.
 
-        Si la perspective existe déjà, elle est mise à jour. Sinon elle
-        est ajoutée (la perspective ``QGIS`` est toujours insérée en premier).
+        If the workspace already exists, it is updated. Otherwise it
+        is added (the ``QGIS`` workspace is always inserted first).
 
-        :param name: Nom de la perspective.
+        :param name: Name of the workspace.
         :type name: str
-        :param data: Dictionnaire complet de la perspective.
+        :param data: Complete workspace dictionary.
         :type data: dict
         """
         self._writing = True
@@ -371,31 +373,31 @@ class ConfigIO(QObject):
             self._write_user_from_cfg()
 
         except Exception as e:
-            print(f"[ConfigIO] Erreur save : {e}")
+            print(f"[ConfigIO] Save error: {e}")
 
         finally:
-            self._writing = False  # ← simple et direct
+            self._writing = False
 
     def delete(self, name: str):
         """
-        Supprime une perspective de ``self._cfg`` et de ``user.psp.json``.
+        Delete a workspace from ``self._cfg`` and ``user.psp.json``.
 
-        Si la perspective provient d'un fichier plugin ``*.psp.json``,
-        elle est ajoutée à ``deleted_perspectives`` dans ``user.psp.json``
-        afin d'être filtrée lors du prochain rechargement du plugin.
+        If the workspace comes from a plugin ``*.psp.json`` file,
+        it is added to ``deleted_perspectives`` in ``user.psp.json``
+        to be filtered on next plugin reload.
 
         .. note::
-            La suppression est immédiate dans ``self._cfg`` — la perspective
-            disparaît de l'UI et de la toolbar sans rechargement.
-            Elle sera définitivement absente au prochain démarrage grâce
-            à ``deleted_perspectives``.
+            Deletion is immediate in ``self._cfg`` — the workspace
+            disappears from the UI and toolbar without reloading.
+            It will be permanently absent on next startup thanks
+            to ``deleted_perspectives``.
 
-        :param name: Nom de la perspective à supprimer.
+        :param name: Name of the workspace to delete.
         :type name: str
         """
         self._writing = True
         try:
-            # Supprimer de self._cfg — effet immédiat
+            # Remove from self._cfg — immediate effect
             perspectives = [
                 p for p in self._cfg.get("perspectives", [])
                 if p["name"] != name
@@ -403,7 +405,7 @@ class ConfigIO(QObject):
             self._cfg["perspectives"] = perspectives
             self._cfg.sgl_unsaved.emit()
 
-            # Persister dans user.psp.json
+            # Persist in user.psp.json
             user_data = self._read_user()
 
             user_data["perspectives"] = [
@@ -411,7 +413,7 @@ class ConfigIO(QObject):
                 if p["name"] != name
             ]
 
-            # Si perspective plugin → ajouter à la liste noire
+            # If plugin workspace → add to blacklist
             if name in self.get_plugin_perspectives():
                 deleted = user_data.get("deleted_perspectives", [])
                 if name not in deleted:
@@ -425,16 +427,16 @@ class ConfigIO(QObject):
 
     def rename(self, old_name: str, new_name: str):
         """
-        Renomme une perspective dans ``self._cfg`` et ``user.psp.json``.
+        Rename a workspace in ``self._cfg`` and ``user.psp.json``.
 
-        :param old_name: Nom actuel de la perspective.
+        :param old_name: Current name of the workspace.
         :type old_name: str
-        :param new_name: Nouveau nom de la perspective.
+        :param new_name: New name of the workspace.
         :type new_name: str
         """
         self._writing = True
         try:
-            # Renommer dans self._cfg
+            # Rename in self._cfg
             perspectives = self._cfg.get("perspectives", [])
             for p in perspectives:
                 if p["name"] == old_name:
@@ -443,7 +445,7 @@ class ConfigIO(QObject):
             self._cfg["perspectives"] = perspectives
             self._cfg.sgl_unsaved.emit()
 
-            # Renommer dans user.psp.json
+            # Rename in user.psp.json
             user_data  = self._read_user()
             user_persp = user_data.get("perspectives", [])
             for p in user_persp:
@@ -458,20 +460,20 @@ class ConfigIO(QObject):
 
     def create_perspective(self, name: str) -> bool:
         """
-        Crée une nouvelle perspective vide.
+        Create a new empty workspace.
 
-        :param name: Nom de la nouvelle perspective.
+        :param name: Name of the new workspace.
         :type name: str
-        :return: ``True`` si créée avec succès,
-            ``False`` si le nom existe déjà.
+        :return: ``True`` if created successfully,
+            ``False`` if the name already exists.
         :rtype: bool
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
-            if config_io.create_perspective("Mon workflow"):
-                print("Créée !")
+            if config_io.create_perspective("My workflow"):
+                print("Created!")
         """
         if name in self.list_all():
             return False
@@ -489,32 +491,32 @@ class ConfigIO(QObject):
 
     def validate(self, data: dict) -> bool:
         """
-        Valide la structure minimale d'un dictionnaire de perspective.
+        Validate the minimal structure of a workspace dictionary.
 
-        :param data: Dictionnaire à valider.
+        :param data: Dictionary to validate.
         :type data: dict
-        :return: ``True`` si le dictionnaire contient les clés requises.
+        :return: ``True`` if the dictionary contains the required keys.
         :rtype: bool
         """
         return "name" in data and "plugins" in data
 
     def get_plugin_perspectives(self) -> dict:
         """
-        Retourne les perspectives déclarées par les plugins installés.
+        Return workspaces declared by installed plugins.
 
-        Scanne tous les fichiers ``*.psp.json`` des plugins QGIS
-        (hors ``user.psp.json``) et retourne un dictionnaire
-        ``{nom_perspective: nom_plugin}``.
+        Scans all ``*.psp.json`` files from QGIS plugins
+        (excluding ``user.psp.json``) and returns a dictionary
+        ``{workspace_name: plugin_name}``.
 
-        :return: Dictionnaire associant chaque perspective à son plugin.
+        :return: Dictionary mapping each workspace to its plugin.
         :rtype: dict[str, str]
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
             plugin_persp = config_io.get_plugin_perspectives()
-            # → {"Modélisation": "georelai", "qats": "q4ts"}
+            # → {"Modeling": "georelai", "Meshing": "meshwidgets"}
         """
         result      = {}
         plugins_dir = os.path.dirname(os.path.dirname(self.base_dir))
@@ -539,15 +541,15 @@ class ConfigIO(QObject):
         return result
 
     # ─────────────────────────────────────────────
-    # MÉTHODES PRIVÉES
+    # PRIVATE METHODS
     # ─────────────────────────────────────────────
 
     def _read_user(self) -> dict:
         """
-        Lit ``user.psp.json`` directement depuis le disque.
+        Read ``user.psp.json`` directly from disk.
 
-        :return: Contenu de ``user.psp.json``, ou ``{"perspectives": []}``
-            si le fichier est absent ou corrompu.
+        :return: Content of ``user.psp.json``, or ``{"perspectives": []}``
+            if the file is missing or corrupted.
         :rtype: dict
         """
         if not os.path.exists(self.config_path):
@@ -556,16 +558,16 @@ class ConfigIO(QObject):
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 return json.load(f) or {"perspectives": []}
         except Exception as e:
-            print(f"[ConfigIO] Erreur lecture : {e}")
+            print(f"[ConfigIO] Read error: {e}")
             return {"perspectives": []}
 
     def _write_user(self, data: dict):
         """
-        Écrit directement ``user.psp.json`` sur le disque.
+        Write directly to ``user.psp.json`` on disk.
 
-        Émet :attr:`Configuration.sgl_saved` après écriture.
+        Emits :attr:`Configuration.sgl_saved` after writing.
 
-        :param data: Dictionnaire à sauvegarder.
+        :param data: Dictionary to save.
         :type data: dict
         """
         try:
@@ -573,29 +575,29 @@ class ConfigIO(QObject):
                 json.dump(data, f, ensure_ascii=False, indent=2)
             self._cfg.sgl_saved.emit()
         except Exception as e:
-            print(f"[ConfigIO] Erreur écriture : {e}")
+            print(f"[ConfigIO] Write error: {e}")
 
     def _write_user_from_cfg(self):
         """
-        Écrit ``user.psp.json`` depuis ``self._cfg``.
+        Write ``user.psp.json`` from ``self._cfg``.
 
-        Ne sauvegarde que les perspectives appartenant à l'utilisateur.
-        Les perspectives des plugins sont incluses uniquement si elles
-        ont été modifiées par l'utilisateur (overrides).
+        Only saves workspaces belonging to the user.
+        Plugin workspaces are included only if they have been
+        modified by the user (overrides).
 
-        Préserve ``deleted_perspectives`` depuis le fichier existant.
+        Preserves ``deleted_perspectives`` from the existing file.
 
-        **Logique :**
+        **Logic:**
 
-        - Perspective non-plugin → toujours écrite.
-        - Perspective plugin non modifiée → ignorée.
-        - Perspective plugin modifiée → écrite comme override.
-        - ``deleted_perspectives`` → toujours préservé.
+        - Non-plugin workspace → always written.
+        - Unmodified plugin workspace → ignored.
+        - Modified plugin workspace → written as override.
+        - ``deleted_perspectives`` → always preserved.
         """
         plugin_perspectives  = self.get_plugin_perspectives()
         original_plugin_data = {}
 
-        # Charger les versions originales pour détecter les overrides
+        # Load original plugin versions to detect overrides
         plugins_dir = os.path.dirname(os.path.dirname(self.base_dir))
         for name, plugin_name in plugin_perspectives.items():
             psp_files = glob.glob(
@@ -613,23 +615,23 @@ class ConfigIO(QObject):
             except Exception:
                 pass
 
-        # Construire la liste à écrire
+        # Build the list to write
         user_perspectives = []
         for p in self._cfg.get("perspectives", []):
             name = p.get("name")
             if name not in plugin_perspectives:
-                # Perspective utilisateur → toujours écrire
+                # User workspace → always write
                 user_perspectives.append(p)
             else:
-                # Perspective plugin → écrire seulement si modifiée
+                # Plugin workspace → write only if modified (override)
                 original = original_plugin_data.get(name)
                 if original and p != original:
                     user_perspectives.append(p)
 
-        # Construire le dictionnaire final
+        # Build final dictionary
         user_data = {"perspectives": user_perspectives}
 
-        # Préserver deleted_perspectives depuis le fichier existant
+        # Preserve deleted_perspectives from existing file
         existing_user = self._read_user()
         if "deleted_perspectives" in existing_user:
             user_data["deleted_perspectives"] = existing_user[

@@ -1,20 +1,20 @@
 # coding: utf-8
 
 """
-Module de capture de l'état courant de l'interface QGIS.
+Current QGIS interface state capture module.
 
-Ce module fournit la classe :class:`StateCapture`, responsable de
-photographier l'état visible de tous les docks et toolbars de l'interface
-QGIS à un instant donné, afin de le sauvegarder comme perspective.
+This module provides the :class:`StateCapture` class, responsible for
+capturing the visible state of all docks and toolbars in the QGIS
+interface at a given moment, in order to save it as a workspace.
 
-**Toolbars exclues de la capture :**
+**Toolbars excluded from capture:**
 
-- ``QToolBar`` — widgets sans nom valide.
-- ``mBrowserToolbar`` — liée au dock Browser (gérée par signal Qt).
-- ``mAdvancedDigitizeToolBar`` — liée au dock Numérisation avancée.
-- ``mGpsToolBar`` — liée au dock GPS.
-- ``mBookmarkToolbar`` — liée au dock Signets.
-- ``processingToolbar`` — liée au dock Traitements.
+- ``QToolBar`` — widgets without a valid name.
+- ``mBrowserToolbar`` — linked to the Browser dock (managed by Qt signal).
+- ``mAdvancedDigitizeToolBar`` — linked to the Advanced Digitizing dock.
+- ``mGpsToolBar`` — linked to the GPS dock.
+- ``mBookmarkToolbar`` — linked to the Bookmarks dock.
+- ``processingToolbar`` — linked to the Processing dock.
 
 :author: Adnan Benaboud — CNR
 """
@@ -28,24 +28,24 @@ from ..core.plugin_discovery import is_valid
 
 class StateCapture:
     """
-    Capture l'état courant de l'interface QGIS.
+    Capture the current state of the QGIS interface.
 
-    Parcourt le registre des plugins fourni par
+    Iterates over the plugin registry provided by
     :class:`~perspective_manager.core.plugin_discovery.PluginDiscovery`
-    et enregistre pour chaque dock et toolbar : sa visibilité, sa zone
-    et sa ligne (pour les toolbars).
+    and records for each dock and toolbar: its visibility, area
+    and line (for toolbars).
 
-    :exemple:
+    :example:
 
     .. code-block:: python
 
         discovery = PluginDiscovery()
         discovery.scan()
         capture   = StateCapture(discovery)
-        data      = capture.capture("Saisie terrain")
+        data      = capture.capture("Field survey")
     """
 
-    #: Toolbars exclues de la capture — liées à un dock ou sans nom valide.
+    #: Toolbars excluded from capture — linked to a dock or without valid name.
     EXCLUDED_TOOLBARS = [
         "QToolBar",
         "mBrowserToolbar",
@@ -57,42 +57,48 @@ class StateCapture:
 
     def __init__(self, discovery):
         """
-        Initialise l'instance avec le registre de découverte.
+        Initialize the instance with the discovery registry.
 
-        :param discovery: Instance de découverte des plugins QGIS.
+        :param discovery: QGIS plugin discovery instance.
         :type discovery: PluginDiscovery
         """
         self.discovery = discovery
 
     def capture(self, name: str) -> dict:
         """
-        Capture l'état courant de tous les docks et toolbars.
+        Capture the current state of all docks and toolbars.
 
-        Parcourt le registre :attr:`PluginDiscovery.registry` et
-        enregistre pour chaque plugin :
+        Iterates over :attr:`PluginDiscovery.registry` and
+        records for each plugin:
 
-        - L'état de ses docks (visibilité, zone).
-        - L'état de ses toolbars (visibilité, zone, ligne).
+        - The state of its docks (visibility, area).
+        - The state of its toolbars (visibility, area, line).
 
-        Les doublons et les widgets invalides sont ignorés.
-        Les toolbars de :attr:`EXCLUDED_TOOLBARS` sont exclues.
+        Duplicates and invalid widgets are ignored.
+        Toolbars in :attr:`EXCLUDED_TOOLBARS` are excluded.
 
-        :param name: Nom de la perspective à créer.
+        :param name: Name of the workspace to create.
         :type name: str
-        :return: Dictionnaire de la perspective capturée.
+        :return: Captured workspace dictionary.
         :rtype: dict
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
-            data = capture.capture("Saisie terrain")
+            data = capture.capture("Field survey")
             # → {
-            #     "name": "Saisie terrain",
+            #     "name": "Field survey",
             #     "plugins": {
             #         "__qgis_native__": {
-            #             "docks": [{"name": "Layers", "visible": True, ...}],
-            #             "toolbars": [{"name": "mMapNavToolBar", "line": 1, ...}]
+            #             "docks": [
+            #                 {"name": "Layers",
+            #                  "visible": True, ...}
+            #             ],
+            #             "toolbars": [
+            #                 {"name": "mMapNavToolBar",
+            #                  "line": 1, ...}
+            #             ]
             #         },
             #         "georelai": {...}
             #     }
@@ -107,7 +113,7 @@ class StateCapture:
             seen_dock_names = set()
             seen_tb_names   = set()
 
-            # ── Capturer les docks ────────────────
+            # ── Capture docks ─────────────────────
             for dock_info in plugin_data.get("docks", []):
                 dock = dock_info["object"]
 
@@ -126,7 +132,7 @@ class StateCapture:
                     "area":    self.discovery._area_to_str(area),
                 })
 
-            # ── Capturer les toolbars ─────────────
+            # ── Capture toolbars ──────────────────
             for tb_info in plugin_data.get("toolbars", []):
                 tb = tb_info["object"]
 
@@ -138,7 +144,7 @@ class StateCapture:
                     continue
 
                 seen_tb_names.add(tb_info["name"])
-                area = main_win.toolBarArea(tb)
+                area     = main_win.toolBarArea(tb)
                 area_str = self.discovery._area_to_str(area)
 
                 toolbars_state.append({
@@ -160,28 +166,28 @@ class StateCapture:
     def _detect_line(self, main_win, toolbar: QToolBar,
                      area_str: str) -> int:
         """
-        Détecte le numéro de ligne d'une toolbar dans sa zone.
+        Detect the line number of a toolbar within its area.
 
-        Compare la position géométrique de la toolbar avec celles
-        des autres toolbars visibles dans la même zone pour déterminer
-        sur quelle ligne elle se trouve (1 = première ligne).
+        Compares the geometric position of the toolbar with those
+        of other visible toolbars in the same area to determine
+        which line it is on (1 = first line).
 
-        :param main_win: Fenêtre principale QGIS.
-        :param toolbar: Toolbar dont on cherche la ligne.
+        :param main_win: QGIS main window.
+        :param toolbar: Toolbar whose line number to find.
         :type toolbar: QToolBar
-        :param area_str: Zone de la toolbar (``"top"``, ``"bottom"``,
+        :param area_str: Toolbar area (``"top"``, ``"bottom"``,
             ``"left"``, ``"right"``).
         :type area_str: str
-        :return: Numéro de ligne (commence à 1). Retourne ``1`` si
-            la position n'est pas trouvée.
+        :return: Line number (starts at 1). Returns ``1`` if
+            position is not found.
         :rtype: int
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
             line = capture._detect_line(main_win, toolbar, "top")
-            # → 2  (deuxième ligne de la zone top)
+            # → 2  (second line of the top area)
         """
         area_map = {
             "top":    Qt.TopToolBarArea,
@@ -191,13 +197,13 @@ class StateCapture:
         }
         area = area_map.get(area_str, Qt.TopToolBarArea)
 
-        # Toolbars visibles dans la même zone
+        # Visible toolbars in the same area
         same_area = [
             tb for tb in main_win.findChildren(QToolBar)
             if main_win.toolBarArea(tb) == area and tb.isVisible()
         ]
 
-        # Trier par position Y (zones horizontales) ou X (zones verticales)
+        # Sort by Y position (horizontal areas) or X (vertical areas)
         if area_str in ("top", "bottom"):
             same_area.sort(key=lambda t: t.geometry().y())
             positions   = sorted(set(t.geometry().y() for t in same_area))

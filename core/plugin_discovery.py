@@ -1,27 +1,26 @@
 # coding: utf-8
 
 """
-Module de découverte dynamique des widgets des plugins QGIS.
+Dynamic widget discovery module for QGIS plugins.
 
-Ce module fournit la classe :class:`PluginDiscovery`, responsable de
-scanner l'interface QGIS et les plugins installés pour détecter
-automatiquement leurs :class:`QDockWidget`, :class:`QToolBar` et
-:class:`QMenu`.
+This module provides the :class:`PluginDiscovery` class, responsible for
+scanning the QGIS interface and installed plugins to automatically detect
+their :class:`QDockWidget`, :class:`QToolBar` and :class:`QMenu`.
 
-**Stratégies de détection pour les plugins tiers :**
+**Detection strategies for third-party plugins:**
 
-1. ``plugin.docks`` — attribut liste de :class:`QDockWidget`.
-2. ``plugin.toolbar`` — attribut unique :class:`QToolBar`.
-3. Inspection via ``dir()`` — parcours de tous les attributs du plugin.
+1. ``plugin.docks`` — list attribute of :class:`QDockWidget`.
+2. ``plugin.toolbar`` — single :class:`QToolBar` attribute.
+3. Inspection via ``dir()`` — iterates over all plugin attributes.
 
-**Structure du registre retourné :**
+**Structure of the returned registry:**
 
 .. code-block:: python
 
     {
         "__qgis_native__": {
-            "display_name": "QGIS — natif",
-            "docks":    [{"name": "Layers", "label": "Couches", ...}],
+            "display_name": "QGIS — native",
+            "docks":    [{"name": "Layers", "label": "Layers", ...}],
             "toolbars": [{"name": "mMapNavToolBar", ...}],
             "menus":    [],
         },
@@ -29,7 +28,7 @@ automatiquement leurs :class:`QDockWidget`, :class:`QToolBar` et
             "display_name": "georelai",
             "docks":    [...],
             "toolbars": [...],
-            "menus":    [{"name": "study_menu", "label": "Étude", ...}],
+            "menus":    [{"name": "study_menu", "label": "Study", ...}],
         },
     }
 
@@ -43,12 +42,12 @@ from qgis.utils import plugins, iface
 
 class PluginDiscovery:
     """
-    Découverte dynamique des widgets (docks, toolbars, menus) de QGIS
-    et des plugins installés.
+    Dynamic discovery of widgets (docks, toolbars, menus) from QGIS
+    and installed plugins.
 
-    Le résultat est stocké dans :attr:`registry` après appel à :meth:`scan`.
+    The result is stored in :attr:`registry` after calling :meth:`scan`.
 
-    :exemple:
+    :example:
 
     .. code-block:: python
 
@@ -60,20 +59,20 @@ class PluginDiscovery:
     """
 
     def __init__(self):
-        """Initialise l'instance avec un registre vide."""
+        """Initialize the instance with an empty registry."""
         self.registry = {}
 
     def scan(self) -> dict:
         """
-        Lance le scan complet de l'interface QGIS.
+        Run a full scan of the QGIS interface.
 
-        Réinitialise le registre, scanne les widgets natifs QGIS
-        puis ceux de chaque plugin installé.
+        Resets the registry, scans third-party plugins first,
+        then native QGIS widgets.
 
-        :return: Registre complet des widgets découverts.
+        :return: Complete registry of discovered widgets.
         :rtype: dict
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
@@ -81,57 +80,47 @@ class PluginDiscovery:
             native   = registry["__qgis_native__"]
         """
         self.registry = {}
-        self._scan_native()
-        self._scan_plugins()
+        self._scan_plugins()   # ← plugins first to claim their widgets
+        self._scan_native()    # ← native excludes already claimed widgets
         return self.registry
 
     def _scan_native(self):
         """
-        Scanne les widgets natifs de la fenêtre principale QGIS.
+        Scan native widgets from the QGIS main window.
 
-        Détecte tous les :class:`QDockWidget` et :class:`QToolBar`
-        présents dans la fenêtre principale et les enregistre sous
-        la clé ``__qgis_native__``.
+        Detects all :class:`QDockWidget` and :class:`QToolBar`
+        present in the main window and registers them under
+        the ``__qgis_native__`` key.
+
+        Excludes toolbars and docks already claimed by third-party
+        plugins to avoid duplicates in the registry.
         """
         main_win        = iface.mainWindow()
         native_docks    = []
         native_toolbars = []
 
-        # Collecter d'abord les toolbars des plugins tiers
-        plugin_toolbar_names = set()
-        for plugin_name, plugin_instance in plugins.items():
-            if plugin_name == "perspective_manager":
-                continue
-            # Stratégie 1 — attribut toolbar
-            if hasattr(plugin_instance, 'toolbar'):
-                try:
-                    tb = plugin_instance.toolbar
-                    if isinstance(tb, QToolBar) and tb.objectName():
-                        plugin_toolbar_names.add(tb.objectName())
-                except Exception:
-                    pass
-            # Stratégie 2 — attribut toolbars
-            if hasattr(plugin_instance, 'toolbars'):
-                try:
-                    for tb in plugin_instance.toolbars:
-                        if isinstance(tb, QToolBar) and tb.objectName():
-                            plugin_toolbar_names.add(tb.objectName())
-                except Exception:
-                    pass
+        # Collect IDs already claimed by plugins
+        claimed_ids = set()
+        for plugin_data in self.registry.values():
+            for dock_info in plugin_data.get("docks", []):
+                claimed_ids.add(id(dock_info["object"]))
+            for tb_info in plugin_data.get("toolbars", []):
+                claimed_ids.add(id(tb_info["object"]))
 
-        # Scanner les widgets natifs en excluant les toolbars plugins
+        # Scan native widgets excluding plugin widgets
         for dock in main_win.findChildren(QDockWidget):
+            if id(dock) in claimed_ids:
+                continue
             native_docks.append(self._describe_dock(dock))
 
         for toolbar in main_win.findChildren(QToolBar):
-            # ← exclure les toolbars des plugins tiers
-            if toolbar.objectName() in plugin_toolbar_names:
+            if id(toolbar) in claimed_ids:
                 continue
             native_toolbars.append(self._describe_toolbar(toolbar))
 
         if native_docks or native_toolbars:
             self.registry["__qgis_native__"] = {
-                "display_name": "QGIS — natif",
+                "display_name": "QGIS — native",
                 "docks":        native_docks,
                 "toolbars":     native_toolbars,
                 "menus":        [],
@@ -139,17 +128,17 @@ class PluginDiscovery:
 
     def _scan_plugins(self):
         """
-        Scanne les widgets de chaque plugin QGIS installé.
+        Scan widgets from each installed QGIS plugin.
 
-        Pour chaque plugin (hors ``perspective_manager``), utilise
-        trois stratégies successives pour détecter les widgets :
+        For each plugin (excluding ``perspective_manager``), uses
+        three successive strategies to detect widgets:
 
-        1. **Attribut ``docks``** — liste de :class:`QDockWidget`.
-        2. **Attribut ``toolbar``** — instance unique de :class:`QToolBar`.
-        3. **Inspection ``dir()``** — parcours de tous les attributs
-           si les deux premières stratégies échouent.
+        1. **``docks`` attribute** — list of :class:`QDockWidget`.
+        2. **``toolbar`` attribute** — single :class:`QToolBar` instance.
+        3. **``dir()`` inspection** — iterates over all attributes
+           if the first two strategies fail.
 
-        Les doublons sont évités via des ensembles de noms et d'identifiants.
+        Duplicates are avoided via name sets and memory identifiers.
         """
         claimed_docks    = set()
         claimed_toolbars = set()
@@ -163,7 +152,7 @@ class PluginDiscovery:
             seen_dock_names = set()
             seen_tb_names   = set()
 
-            # ── Stratégie 1 — attribut docks ──────
+            # ── Strategy 1 — docks attribute ──────
             if hasattr(plugin_instance, 'docks'):
                 try:
                     for dock in plugin_instance.docks:
@@ -178,7 +167,7 @@ class PluginDiscovery:
                 except Exception:
                     pass
 
-            # ── Stratégie 2 — attribut toolbar ────
+            # ── Strategy 2 — toolbar attribute ────
             if hasattr(plugin_instance, 'toolbar'):
                 try:
                     tb = plugin_instance.toolbar
@@ -193,8 +182,8 @@ class PluginDiscovery:
                 except Exception:
                     pass
 
-            # ── Stratégie 3 — inspection dir() ────
-            # Utilisée seulement si les deux premières échouent
+            # ── Strategy 3 — dir() inspection ─────
+            # Used only if the first two strategies fail
             if not plugin_docks and not plugin_toolbars:
                 for attr_name in dir(plugin_instance):
                     if attr_name.startswith('__'):
@@ -209,7 +198,9 @@ class PluginDiscovery:
                         name = self._get_name(attr)
                         if name not in seen_dock_names:
                             seen_dock_names.add(name)
-                            plugin_docks.append(self._describe_dock(attr))
+                            plugin_docks.append(
+                                self._describe_dock(attr)
+                            )
                             claimed_docks.add(id(attr))
 
                     elif isinstance(attr, QToolBar) \
@@ -222,7 +213,7 @@ class PluginDiscovery:
                             )
                             claimed_toolbars.add(id(attr))
 
-            # ── Scan des menus ─────────────────────
+            # ── Scan menus ─────────────────────────
             plugin_menus = self._scan_plugin_menus(plugin_instance)
 
             if plugin_docks or plugin_toolbars or plugin_menus:
@@ -235,14 +226,13 @@ class PluginDiscovery:
 
     def _scan_plugin_menus(self, plugin_instance) -> list:
         """
-        Découvre les :class:`QMenu` rattachés à un plugin.
+        Discover :class:`QMenu` instances attached to a plugin.
 
-        Inspecte tous les attributs du plugin à la recherche
-        d'instances :class:`QMenu`. Les doublons sont évités
-        via l'identifiant mémoire du widget.
+        Inspects all plugin attributes looking for :class:`QMenu`
+        instances. Duplicates are avoided via widget memory identifiers.
 
-        :param plugin_instance: Instance du plugin à inspecter.
-        :return: Liste des menus découverts, chacun sous la forme
+        :param plugin_instance: Plugin instance to inspect.
+        :return: List of discovered menus, each as
             ``{"object": QMenu, "name": str, "label": str}``.
         :rtype: list[dict]
         """
@@ -268,16 +258,16 @@ class PluginDiscovery:
         return found_menus
 
     # ─────────────────────────────────────────────
-    # DESCRIPTION DES WIDGETS
+    # WIDGET DESCRIPTION
     # ─────────────────────────────────────────────
 
     def _describe_dock(self, dock: QDockWidget) -> dict:
         """
-        Construit le dictionnaire de description d'un :class:`QDockWidget`.
+        Build the description dictionary of a :class:`QDockWidget`.
 
-        :param dock: Widget panneau à décrire.
+        :param dock: Panel widget to describe.
         :type dock: QDockWidget
-        :return: Dictionnaire avec les clés ``type``, ``object``, ``name``,
+        :return: Dictionary with keys ``type``, ``object``, ``name``,
             ``label``, ``visible``, ``floating``, ``area``.
         :rtype: dict
         """
@@ -295,11 +285,11 @@ class PluginDiscovery:
 
     def _describe_toolbar(self, toolbar: QToolBar) -> dict:
         """
-        Construit le dictionnaire de description d'une :class:`QToolBar`.
+        Build the description dictionary of a :class:`QToolBar`.
 
-        :param toolbar: Barre d'outils à décrire.
+        :param toolbar: Toolbar to describe.
         :type toolbar: QToolBar
-        :return: Dictionnaire avec les clés ``type``, ``object``, ``name``,
+        :return: Dictionary with keys ``type``, ``object``, ``name``,
             ``label``, ``visible``, ``floating``, ``area``.
         :rtype: dict
         """
@@ -321,13 +311,13 @@ class PluginDiscovery:
 
     def _get_name(self, widget) -> str:
         """
-        Retourne le nom identifiant d'un widget Qt.
+        Return the identifying name of a Qt widget.
 
-        Priorité : ``objectName()`` > ``windowTitle()`` normalisé
-        > nom de la classe Python.
+        Priority: ``objectName()`` > normalized ``windowTitle()``
+        > Python class name.
 
-        :param widget: Widget Qt à identifier.
-        :return: Nom du widget.
+        :param widget: Qt widget to identify.
+        :return: Widget name.
         :rtype: str
         """
         if widget.objectName():
@@ -338,11 +328,11 @@ class PluginDiscovery:
 
     def _area_to_str(self, area) -> str:
         """
-        Convertit une constante Qt de zone de dock/toolbar en chaîne.
+        Convert a Qt dock/toolbar area constant to a string.
 
-        :param area: Constante Qt (ex. ``Qt.LeftDockWidgetArea``).
-        :return: Chaîne parmi ``"left"``, ``"right"``, ``"top"``,
-            ``"bottom"``. Retourne ``"left"`` par défaut.
+        :param area: Qt constant (e.g. ``Qt.LeftDockWidgetArea``).
+        :return: String among ``"left"``, ``"right"``, ``"top"``,
+            ``"bottom"``. Returns ``"left"`` by default.
         :rtype: str
         """
         mapping = {
@@ -355,13 +345,13 @@ class PluginDiscovery:
 
     def str_to_area(self, area_str: str):
         """
-        Convertit une chaîne de zone en constante Qt.
+        Convert an area string to a Qt constant.
 
-        :param area_str: Chaîne parmi ``"left"``, ``"right"``,
+        :param area_str: String among ``"left"``, ``"right"``,
             ``"top"``, ``"bottom"``.
         :type area_str: str
-        :return: Constante Qt correspondante.
-            Retourne ``Qt.LeftDockWidgetArea`` par défaut.
+        :return: Corresponding Qt constant.
+            Returns ``Qt.LeftDockWidgetArea`` by default.
         """
         mapping = {
             "left":   Qt.LeftDockWidgetArea,
@@ -373,22 +363,23 @@ class PluginDiscovery:
 
 
 # ─────────────────────────────────────────────────
-# FONCTION UTILITAIRE
+# UTILITY FUNCTION
 # ─────────────────────────────────────────────────
 
 def is_valid(widget) -> bool:
     """
-    Vérifie qu'un widget Qt est toujours valide en mémoire.
+    Check that a Qt widget is still valid in memory.
 
-    Les widgets Qt peuvent être détruits côté C++ tout en conservant
-    leur référence Python. Cette fonction détecte ce cas en appelant
-    une méthode simple et en capturant le :class:`RuntimeError`.
+    Qt widgets can be destroyed on the C++ side while keeping
+    their Python reference. This function detects this case by
+    calling a simple method and catching :class:`RuntimeError`.
 
-    :param widget: Widget Qt à vérifier.
-    :return: ``True`` si le widget est valide, ``False`` s'il a été détruit.
+    :param widget: Qt widget to check.
+    :return: ``True`` if the widget is valid,
+        ``False`` if it has been destroyed.
     :rtype: bool
 
-    :exemple:
+    :example:
 
     .. code-block:: python
 

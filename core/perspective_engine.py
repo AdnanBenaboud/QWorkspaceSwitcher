@@ -1,37 +1,38 @@
 # coding: utf-8
 
 """
-Module du moteur principal du plugin Gestionnaire de Perspectives.
+Main engine module of the QWorkspace Switcher plugin.
 
-Ce module fournit la classe :class:`PerspectiveEngine`, chef d'orchestre
-du plugin. Elle coordonne :class:`~perspective_manager.core.plugin_discovery.PluginDiscovery`,
-:class:`~perspective_manager.core.config_io.ConfigIO` et les applicateurs
-pour appliquer les perspectives sur l'interface QGIS.
+This module provides the :class:`PerspectiveEngine` class, the orchestrator
+of the plugin. It coordinates
+:class:`~perspective_manager.core.plugin_discovery.PluginDiscovery`,
+:class:`~perspective_manager.core.config_io.ConfigIO` and the applicators
+to apply workspaces on the QGIS interface.
 
-**Flux d'application d'une perspective :**
+**Workspace application flow:**
 
 .. code-block:: text
 
-    apply("Saisie terrain")
+    apply("Field survey")
         │
-        ├── Passe 1 — _hide_all()
-        │       → cache tous les docks et toolbars
+        ├── Pass 1 — _hide_all()
+        │       → hides all docks and toolbars
         │
-        ├── Passe 2 — DockApplicator.apply()
-        │       → positionne et affiche les docks
+        ├── Pass 2 — DockApplicator.apply()
+        │       → positions and shows docks
         │
-        ├── Passe 3 — ToolbarApplicator.apply_all()
-        │       → positionne et affiche les toolbars
+        ├── Pass 3 — ToolbarApplicator.apply_all()
+        │       → positions and shows toolbars
         │
-        └── Passe 4 — menuBar().setVisible()
-                → affiche/cache la barre de menus QGIS
+        └── Pass 4 — menuBar().setVisible()
+                → shows/hides the QGIS menu bar
 
-**Toolbars exclues** (jamais repositionnées) :
+**Excluded toolbars** (never repositioned):
 
-- ``PerspectiveManagerToolbar`` — toolbar du plugin lui-même.
-- ``QToolBar`` — widgets sans nom valide.
+- ``QWorkspaceSwitcherToolbar`` — the plugin's own toolbar.
+- ``QToolBar`` — widgets without a valid name.
 
-**Toolbars liées** (suivent automatiquement leur dock) :
+**Linked toolbars** (automatically follow their dock):
 
 - ``mBrowserToolbar`` → dock ``Browser``
 - ``mAdvancedDigitizeToolBar`` → dock ``AdvancedDigitizingTools``
@@ -53,7 +54,7 @@ from ..applicators.toolbar_applicator import ToolbarApplicator
 from ..applicators.state_capture import StateCapture
 
 
-#: Toolbars liées à un dock — leur visibilité suit celle du dock via signal Qt.
+#: Toolbars linked to a dock — visibility follows the dock via Qt signal.
 LINKED_TOOLBARS = {
     "mBrowserToolbar",
     "mAdvancedDigitizeToolBar",
@@ -62,54 +63,54 @@ LINKED_TOOLBARS = {
     "processingToolbar",
 }
 
-#: Toolbars exclues — jamais cachées ni repositionnées par le plugin.
+#: Excluded toolbars — never hidden or repositioned by the plugin.
 EXCLUDED_TOOLBARS = {
-    "PerspectiveManagerToolbar",
+    "QWorkspaceSwitcherToolbar",
     "QToolBar",
 }
 
 
 class PerspectiveEngine(QObject):
     """
-    Chef d'orchestre du plugin Gestionnaire de Perspectives.
+    Orchestrator of the QWorkspace Switcher plugin.
 
-    Coordonne la découverte des plugins, la gestion de la configuration
-    et l'application des perspectives sur l'interface QGIS.
+    Coordinates plugin discovery, configuration management
+    and workspace application on the QGIS interface.
 
-    **Responsabilités :**
+    **Responsibilities:**
 
-    - Scanner les plugins QGIS installés via :class:`PluginDiscovery`.
-    - Lire et écrire les perspectives via :class:`ConfigIO`.
-    - Appliquer les perspectives (docks, toolbars, barre de menus).
-    - Maintenir les liaisons dock ↔ toolbar automatiques.
-    - Émettre :attr:`perspectiveChanged` lors des changements.
+    - Scan installed QGIS plugins via :class:`PluginDiscovery`.
+    - Read and write workspaces via :class:`ConfigIO`.
+    - Apply workspaces (docks, toolbars, menu bar).
+    - Maintain automatic dock ↔ toolbar links.
+    - Emit :attr:`perspectiveChanged` on changes.
 
-    :exemple:
+    :example:
 
     .. code-block:: python
 
         engine = PerspectiveEngine()
         engine.initialize()
-        engine.apply("Saisie terrain")
+        engine.apply("Field survey")
     """
 
     perspectiveChanged = pyqtSignal(str)
     """
-    Signal émis après l'application d'une perspective.
+    Signal emitted after a workspace is applied.
 
-    Transmet le nom de la perspective appliquée, ou ``"__reload__"``
-    lors d'un rechargement externe de la configuration.
+    Transmits the name of the applied workspace, or ``"__reload__"``
+    on external configuration reload.
     """
 
     DEFAULT_PERSPECTIVE_NAME = "QGIS"
-    """Nom de la perspective par défaut créée au premier démarrage."""
+    """Name of the default workspace created on first startup."""
 
     def __init__(self):
         """
-        Initialise le moteur avec des applicateurs à ``None``.
+        Initialize the engine with applicators set to ``None``.
 
-        Les applicateurs sont instanciés dans :meth:`initialize`
-        après le scan des plugins.
+        Applicators are instantiated in :meth:`initialize`
+        after the plugin scan.
         """
         super().__init__()
 
@@ -123,20 +124,20 @@ class PerspectiveEngine(QObject):
         self.state_capture      = None
 
     # ─────────────────────────────────────────────
-    # INITIALISATION
+    # INITIALIZATION
     # ─────────────────────────────────────────────
 
     def initialize(self):
         """
-        Initialise le moteur au démarrage du plugin.
+        Initialize the engine at plugin startup.
 
-        Effectue dans l'ordre :
+        Performs in order:
 
-        1. Scan des plugins QGIS installés.
-        2. Instanciation des applicateurs.
-        3. Création de la perspective ``QGIS`` par défaut si absente.
-        4. Connexion des liaisons dock ↔ toolbar.
-        5. Connexion au signal :attr:`ConfigIO.configChanged`.
+        1. Scan installed QGIS plugins.
+        2. Instantiate applicators.
+        3. Create default ``QGIS`` workspace if absent.
+        4. Connect dock ↔ toolbar links.
+        5. Connect to :attr:`ConfigIO.configChanged` signal.
         """
         self.registry = self.discovery.scan()
 
@@ -151,25 +152,25 @@ class PerspectiveEngine(QObject):
 
     def _on_config_changed(self):
         """
-        Appelé quand ``user.psp.json`` est modifié depuis l'extérieur.
+        Called when ``user.psp.json`` is modified from outside.
 
-        Émet :attr:`perspectiveChanged` avec la valeur spéciale
-        ``"__reload__"`` pour déclencher un rafraîchissement de l'UI
-        sans appliquer de perspective.
+        Emits :attr:`perspectiveChanged` with the special value
+        ``"__reload__"`` to trigger a UI refresh without
+        applying a workspace.
         """
         self.perspectiveChanged.emit("__reload__")
 
     def _ensure_default_perspective(self):
         """
-        Crée la perspective ``QGIS`` par défaut si elle est absente ou vide.
+        Create the default ``QGIS`` workspace if absent or empty.
 
-        Vérifie que la perspective contient au moins un widget visible.
-        Si ce n'est pas le cas, capture l'état actuel de l'interface QGIS
-        et le sauvegarde comme perspective par défaut.
+        Checks that the workspace contains at least one visible widget.
+        If not, captures the current QGIS interface state and saves
+        it as the default workspace.
 
         .. note::
-            La perspective ``QGIS`` est protégée contre la suppression
-            dans l'interface utilisateur.
+            The ``QGIS`` workspace is protected against deletion
+            in the user interface.
         """
         existing = self.config_io.load(self.DEFAULT_PERSPECTIVE_NAME)
 
@@ -191,45 +192,44 @@ class PerspectiveEngine(QObject):
         self.config_io.save(self.DEFAULT_PERSPECTIVE_NAME, data)
 
     # ─────────────────────────────────────────────
-    # PERSPECTIVES — LISTE
+    # WORKSPACES — LIST
     # ─────────────────────────────────────────────
 
     def list_perspectives(self) -> list:
         """
-        Retourne la liste des noms de toutes les perspectives.
+        Return the list of all workspace names.
 
-        Inclut les perspectives utilisateur et celles des plugins.
+        Includes both user and plugin workspaces.
 
-        :return: Liste des noms de perspectives.
+        :return: List of workspace names.
         :rtype: list[str]
         """
         return self.config_io.list_all()
 
     def list_perspectives_merged(self) -> list:
         """
-        Alias de :meth:`list_perspectives`.
+        Alias for :meth:`list_perspectives`.
 
-        Conservé pour compatibilité avec les appels de la toolbar.
+        Kept for compatibility with toolbar calls.
 
-        :return: Liste des noms de perspectives.
+        :return: List of workspace names.
         :rtype: list[str]
         """
         return self.config_io.list_all_merged()
 
     # ─────────────────────────────────────────────
-    # PERSPECTIVES — CRÉER
+    # WORKSPACES — CREATE
     # ─────────────────────────────────────────────
 
     def add_perspective(self, name: str) -> bool:
         """
-        Crée une nouvelle perspective en capturant l'état actuel de QGIS.
+        Create a new workspace by capturing the current QGIS state.
 
-        Rescanne les plugins avant la capture pour garantir des références
-        Qt valides.
+        Rescans plugins before capture to ensure valid Qt references.
 
-        :param name: Nom de la nouvelle perspective.
+        :param name: Name of the new workspace.
         :type name: str
-        :return: ``True`` si créée, ``False`` si le nom existe déjà.
+        :return: ``True`` if created, ``False`` if name already exists.
         :rtype: bool
         """
         if name in self.config_io.list_all():
@@ -243,26 +243,26 @@ class PerspectiveEngine(QObject):
         return True
 
     # ─────────────────────────────────────────────
-    # PERSPECTIVES — APPLIQUER
+    # WORKSPACES — APPLY
     # ─────────────────────────────────────────────
 
     def apply(self, name: str):
         """
-        Charge et applique une perspective par son nom.
+        Load and apply a workspace by name.
 
-        Effectue quatre passes successives :
+        Performs four successive passes:
 
-        1. Cache tous les docks et toolbars.
-        2. Applique la configuration des docks.
-        3. Applique la configuration des toolbars.
-        4. Affiche ou cache la barre de menus QGIS.
+        1. Hide all docks and toolbars.
+        2. Apply dock configuration.
+        3. Apply toolbar configuration.
+        4. Show or hide the QGIS menu bar.
 
-        Émet :attr:`perspectiveChanged` en cas de succès.
+        Emits :attr:`perspectiveChanged` on success.
 
-        :param name: Nom de la perspective à appliquer.
+        :param name: Name of the workspace to apply.
         :type name: str
         """
-        # Rescanner pour avoir des références Qt valides
+        # Rescan to get valid Qt references
         self.registry           = self.discovery.scan()
         self.dock_applicator    = DockApplicator(self.discovery)
         self.toolbar_applicator = ToolbarApplicator(self.discovery)
@@ -276,24 +276,26 @@ class PerspectiveEngine(QObject):
         main_win.setUpdatesEnabled(False)
 
         try:
-            # Passe 1 — cacher tout
+            # Pass 1 — hide all
             self._hide_all()
 
-            # Passe 2 — appliquer les docks
+            # Pass 2 — apply docks
             for plugin_name, plugin_data in data.get("plugins", {}).items():
                 self.dock_applicator.apply(
                     plugin_name,
                     plugin_data.get("docks", [])
                 )
 
-            # Passe 3 — appliquer les toolbars
+            # Pass 3 — apply toolbars
             all_toolbars = {
                 plugin_name: plugin_data.get("toolbars", [])
-                for plugin_name, plugin_data in data.get("plugins", {}).items()
+                for plugin_name, plugin_data in data.get(
+                    "plugins", {}
+                ).items()
             }
             self.toolbar_applicator.apply_all(all_toolbars)
 
-            # Passe 4 — barre de menus
+            # Pass 4 — menu bar
             show_menu_bar = data.get("show_menu_bar", True)
             iface.mainWindow().menuBar().setVisible(show_menu_bar)
 
@@ -301,26 +303,26 @@ class PerspectiveEngine(QObject):
             self.perspectiveChanged.emit(name)
 
         except Exception as e:
-            print(f"[Engine] Erreur lors de l'application de '{name}' : {e}")
+            print(f"[Engine] Error applying workspace '{name}': {e}")
 
         finally:
             main_win.setUpdatesEnabled(True)
 
     def _hide_all(self):
         """
-        Cache tous les docks et toolbars de l'interface QGIS.
+        Hide all docks and toolbars from the QGIS interface.
 
-        Respecte les exclusions :
+        Respects exclusions:
 
-        - :data:`EXCLUDED_TOOLBARS` — jamais cachées.
-        - :data:`LINKED_TOOLBARS` — gérées automatiquement par leur dock.
+        - :data:`EXCLUDED_TOOLBARS` — never hidden.
+        - :data:`LINKED_TOOLBARS` — managed automatically by their dock.
 
-        Les docks liés à une toolbar (via :meth:`_connect_dock_toolbar_links`)
-        propagent automatiquement leur visibilité à leur toolbar associée.
+        Docks linked to a toolbar (via :meth:`_connect_dock_toolbar_links`)
+        automatically propagate their visibility to their associated toolbar.
         """
         for plugin_data in self.registry.values():
 
-            # Cacher les docks
+            # Hide docks
             for dock_info in plugin_data.get("docks", []):
                 dock = dock_info["object"]
                 if not is_valid(dock):
@@ -330,16 +332,14 @@ class PerspectiveEngine(QObject):
                 except RuntimeError:
                     pass
 
-            # Cacher les toolbars
+            # Hide toolbars
             for tb_info in plugin_data.get("toolbars", []):
                 tb = tb_info["object"]
 
                 if tb_info["name"] in EXCLUDED_TOOLBARS:
                     continue
-
                 if tb_info["name"] in LINKED_TOOLBARS:
                     continue
-
                 if not is_valid(tb):
                     continue
                 try:
@@ -348,14 +348,14 @@ class PerspectiveEngine(QObject):
                     pass
 
     # ─────────────────────────────────────────────
-    # PERSPECTIVES — SAUVEGARDER
+    # WORKSPACES — SAVE
     # ─────────────────────────────────────────────
 
     def save(self, name: str):
         """
-        Capture l'état courant de l'interface QGIS et le sauvegarde.
+        Capture the current QGIS interface state and save it.
 
-        :param name: Nom de la perspective à mettre à jour.
+        :param name: Name of the workspace to update.
         :type name: str
         """
         data = self.state_capture.capture(name)
@@ -363,30 +363,30 @@ class PerspectiveEngine(QObject):
 
     def save_from_data(self, name: str, data: dict):
         """
-        Sauvegarde une perspective depuis un dictionnaire.
+        Save a workspace from a dictionary.
 
-        Utilisé par l'interface utilisateur après modification
-        manuelle via :class:`~perspective_manager.ui.main_window.MainWindow`.
+        Used by the user interface after manual modification
+        via :class:`~perspective_manager.ui.main_window.MainWindow`.
 
-        :param name: Nom de la perspective.
+        :param name: Name of the workspace.
         :type name: str
-        :param data: Dictionnaire complet de la perspective.
+        :param data: Complete workspace dictionary.
         :type data: dict
         """
         self.config_io.save(name, data)
 
     # ─────────────────────────────────────────────
-    # PERSPECTIVES — SUPPRIMER / RENOMMER
+    # WORKSPACES — DELETE / RENAME
     # ─────────────────────────────────────────────
 
     def delete(self, name: str):
         """
-        Supprime une perspective.
+        Delete a workspace.
 
-        Réinitialise :attr:`current_perspective` si la perspective
-        supprimée était la perspective active.
+        Resets :attr:`current_perspective` if the deleted workspace
+        was the active one.
 
-        :param name: Nom de la perspective à supprimer.
+        :param name: Name of the workspace to delete.
         :type name: str
         """
         self.config_io.delete(name)
@@ -395,14 +395,14 @@ class PerspectiveEngine(QObject):
 
     def rename(self, old_name: str, new_name: str):
         """
-        Renomme une perspective.
+        Rename a workspace.
 
-        Met à jour :attr:`current_perspective` si la perspective
-        renommée était la perspective active.
+        Updates :attr:`current_perspective` if the renamed workspace
+        was the active one.
 
-        :param old_name: Nom actuel de la perspective.
+        :param old_name: Current name of the workspace.
         :type old_name: str
-        :param new_name: Nouveau nom de la perspective.
+        :param new_name: New name of the workspace.
         :type new_name: str
         """
         self.config_io.rename(old_name, new_name)
@@ -410,43 +410,43 @@ class PerspectiveEngine(QObject):
             self.current_perspective = new_name
 
     # ─────────────────────────────────────────────
-    # ACCÈS REGISTRE
+    # REGISTRY ACCESS
     # ─────────────────────────────────────────────
 
     def get_registry(self) -> dict:
         """
-        Retourne le registre des widgets découverts.
+        Return the discovered widget registry.
 
-        Utilisé par l'interface utilisateur pour alimenter
-        les arbres de docks et toolbars.
+        Used by the user interface to populate
+        dock and toolbar trees.
 
-        :return: Registre des plugins et leurs widgets.
+        :return: Registry of plugins and their widgets.
         :rtype: dict
         """
         return self.registry
 
     def get_current_perspective(self) -> str:
         """
-        Retourne le nom de la perspective actuellement active.
+        Return the name of the currently active workspace.
 
-        :return: Nom de la perspective active, ou ``None``.
+        :return: Name of the active workspace, or ``None``.
         :rtype: str or None
         """
         return self.current_perspective
 
     # ─────────────────────────────────────────────
-    # LIAISONS DOCK ↔ TOOLBAR
+    # DOCK ↔ TOOLBAR LINKS
     # ─────────────────────────────────────────────
 
     def _connect_dock_toolbar_links(self):
         """
-        Connecte les signaux Qt pour synchroniser la visibilité
-        des toolbars liées à leur dock associé.
+        Connect Qt signals to synchronize toolbar visibility
+        with their associated dock.
 
-        Quand un dock est affiché ou caché, sa toolbar liée
-        suit automatiquement via le signal ``visibilityChanged``.
+        When a dock is shown or hidden, its linked toolbar
+        follows automatically via the ``visibilityChanged`` signal.
 
-        **Liaisons configurées :**
+        **Configured links:**
 
         .. code-block:: text
 
@@ -458,8 +458,8 @@ class PerspectiveEngine(QObject):
             ProcessingToolbox    → processingToolbar
 
         .. note::
-            Les connexions existantes sont déconnectées avant
-            reconnexion pour éviter les doublons.
+            Existing connections are disconnected before
+            reconnecting to avoid duplicates.
         """
         main_win = iface.mainWindow()
 
@@ -472,21 +472,21 @@ class PerspectiveEngine(QObject):
             "ProcessingToolbox":       "processingToolbar",
         }
 
-        # Construire l'index des toolbars (première occurrence uniquement)
+        # Build toolbar index (first occurrence only)
         toolbar_index = {}
         for tb in main_win.findChildren(QToolBar):
             name = tb.objectName()
             if name and name not in toolbar_index:
                 toolbar_index[name] = tb
 
-        # Construire l'index des docks
+        # Build dock index
         dock_index = {}
         for dock in main_win.findChildren(QDockWidget):
             name = dock.objectName()
             if name and name not in dock_index:
                 dock_index[name] = dock
 
-        # Connecter les liaisons
+        # Connect links
         for dock_name, toolbar_name in LINKS.items():
             dock    = dock_index.get(dock_name)
             toolbar = toolbar_index.get(toolbar_name)

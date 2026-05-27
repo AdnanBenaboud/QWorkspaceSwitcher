@@ -1,19 +1,19 @@
 # coding: utf-8
 
 """
-Module d'application de la configuration des panneaux (docks).
+Dock panel configuration applicator module.
 
-Ce module fournit la classe :class:`DockApplicator`, responsable de
-positionner et afficher les :class:`QDockWidget` selon la configuration
-d'une perspective.
+This module provides the :class:`DockApplicator` class, responsible for
+positioning and displaying :class:`QDockWidget` according to the
+workspace configuration.
 
-**Stratégies de placement selon le nombre de docks par zone :**
+**Placement strategies based on the number of docks per area:**
 
 .. code-block:: text
 
-    1 dock  → placement normal (addDockWidget)
-    2 docks → split côte à côte ou vertical (splitDockWidget)
-    3 docks → tabification en onglets (tabifyDockWidget)
+    1 dock  → normal placement (addDockWidget)
+    2 docks → side by side or vertical split (splitDockWidget)
+    3 docks → tabbed layout (tabifyDockWidget)
 
 :author: Adnan Benaboud — CNR
 """
@@ -27,19 +27,19 @@ from ..core.plugin_discovery import is_valid
 
 class DockApplicator:
     """
-    Applique la configuration des panneaux sur l'interface QGIS.
+    Apply dock panel configuration to the QGIS interface.
 
-    Positionne les :class:`QDockWidget` dans les zones de la fenêtre
-    principale selon la configuration de la perspective active.
+    Positions :class:`QDockWidget` in the main window areas
+    according to the active workspace configuration.
 
-    La stratégie de placement dépend du nombre de docks visibles
-    dans chaque zone :
+    The placement strategy depends on the number of visible docks
+    in each area:
 
-    - **1 dock** → placement normal via ``addDockWidget``.
+    - **1 dock** → normal placement via ``addDockWidget``.
     - **2 docks** → split via ``splitDockWidget``.
-    - **3 docks ou plus** → tabification via ``tabifyDockWidget``.
+    - **3 docks or more** → tabbed layout via ``tabifyDockWidget``.
 
-    :exemple:
+    :example:
 
     .. code-block:: python
 
@@ -49,36 +49,38 @@ class DockApplicator:
 
     def __init__(self, discovery):
         """
-        Initialise l'applicateur avec le registre de découverte.
+        Initialize the applicator with the discovery registry.
 
-        :param discovery: Instance de découverte des plugins QGIS.
+        :param discovery: QGIS plugin discovery instance.
         :type discovery: PluginDiscovery
         """
         self.discovery = discovery
 
     def apply(self, plugin_name: str, docks_config: list):
         """
-        Applique la configuration des docks d'un plugin.
+        Apply the dock configuration for a plugin.
 
-        Pour chaque dock de la configuration :
+        For each dock in the configuration:
 
-        - Cache le dock si ``visible`` est ``False``.
-        - Groupe les docks visibles par zone.
-        - Applique la stratégie de placement adaptée.
+        - Hides the dock if ``visible`` is ``False``.
+        - Groups visible docks by area.
+        - Applies the appropriate placement strategy.
 
-        :param plugin_name: Nom du plugin propriétaire des docks.
+        :param plugin_name: Name of the plugin owning the docks.
         :type plugin_name: str
-        :param docks_config: Liste des configurations de docks, chacune
-            sous la forme ``{"name": str, "visible": bool, "area": str}``.
+        :param docks_config: List of dock configurations, each as
+            ``{"name": str, "visible": bool, "area": str}``.
         :type docks_config: list[dict]
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
             applicator.apply("georelai", [
-                {"name": "import_bornes", "visible": True,  "area": "right"},
-                {"name": "edition_profil", "visible": False, "area": "left"},
+                {"name": "import_bornes",
+                 "visible": True,  "area": "right"},
+                {"name": "edition_profil",
+                 "visible": False, "area": "left"},
             ])
         """
         main_win    = iface.mainWindow()
@@ -90,12 +92,12 @@ class DockApplicator:
             if dock is None or not is_valid(dock):
                 continue
 
-            # Cacher les docks non visibles
+            # Hide non-visible docks
             if not dock_cfg.get("visible", True):
                 dock.setVisible(False)
                 continue
 
-            # Grouper les docks visibles par zone
+            # Group visible docks by area
             area = dock_cfg.get("area", "left")
             if area not in area_groups:
                 area_groups[area] = []
@@ -104,7 +106,7 @@ class DockApplicator:
                 "config": dock_cfg,
             })
 
-        # Appliquer la stratégie selon le nombre de docks par zone
+        # Apply placement strategy based on number of docks per area
         for area_str, group in area_groups.items():
             area = self.discovery.str_to_area(area_str)
 
@@ -116,18 +118,18 @@ class DockApplicator:
                 self._apply_tabified(main_win, area, group)
 
     # ─────────────────────────────────────────────
-    # STRATÉGIES DE PLACEMENT
+    # PLACEMENT STRATEGIES
     # ─────────────────────────────────────────────
 
     def _apply_single(self, main_win, area, dock: QDockWidget):
         """
-        Place un dock seul dans une zone.
+        Place a single dock in an area.
 
-        Réancre le dock s'il est flottant avant de le placer.
+        Re-anchors the dock if it is floating before placing it.
 
-        :param main_win: Fenêtre principale QGIS.
-        :param area: Constante Qt de zone (ex. ``Qt.LeftDockWidgetArea``).
-        :param dock: Dock à placer.
+        :param main_win: QGIS main window.
+        :param area: Qt area constant (e.g. ``Qt.LeftDockWidgetArea``).
+        :param dock: Dock to place.
         :type dock: QDockWidget
         """
         if not is_valid(dock):
@@ -141,17 +143,17 @@ class DockApplicator:
 
     def _apply_split(self, main_win, area, group: list):
         """
-        Place deux docks côte à côte ou l'un au-dessus de l'autre.
+        Place two docks side by side or one above the other.
 
-        Utilise ``splitDockWidget`` pour partager l'espace entre les
-        deux docks. L'orientation du split dépend de la zone :
+        Uses ``splitDockWidget`` to share space between the two docks.
+        The split orientation depends on the area:
 
-        - Zone gauche/droite → split **vertical** (l'un au-dessus de l'autre).
-        - Zone haut/bas → split **horizontal** (côte à côte).
+        - Left/right area → **vertical** split (one above the other).
+        - Top/bottom area → **horizontal** split (side by side).
 
-        :param main_win: Fenêtre principale QGIS.
-        :param area: Constante Qt de zone.
-        :param group: Liste de deux entrées ``{"dock": QDockWidget, ...}``.
+        :param main_win: QGIS main window.
+        :param area: Qt area constant.
+        :param group: List of two entries ``{"dock": QDockWidget, ...}``.
         :type group: list[dict]
         """
         dock1 = group[0]["dock"]
@@ -168,7 +170,7 @@ class DockApplicator:
         main_win.addDockWidget(area, dock1)
         dock1.setVisible(True)
 
-        # Orientation du split selon la zone
+        # Split orientation based on area
         if area in (Qt.LeftDockWidgetArea, Qt.RightDockWidgetArea):
             main_win.splitDockWidget(dock1, dock2, Qt.Vertical)
         else:
@@ -178,15 +180,15 @@ class DockApplicator:
 
     def _apply_tabified(self, main_win, area, group: list):
         """
-        Place trois docks ou plus en onglets dans la même zone.
+        Place three or more docks as tabs in the same area.
 
-        Le premier dock est placé normalement. Les suivants sont
-        tabifiés sur le premier via ``tabifyDockWidget``.
-        Le premier dock est mis au premier plan après tabification.
+        The first dock is placed normally. The following ones are
+        tabified onto the first via ``tabifyDockWidget``.
+        The first dock is brought to the foreground after tabification.
 
-        :param main_win: Fenêtre principale QGIS.
-        :param area: Constante Qt de zone.
-        :param group: Liste d'au moins trois entrées
+        :param main_win: QGIS main window.
+        :param area: Qt area constant.
+        :param group: List of at least three entries
             ``{"dock": QDockWidget, ...}``.
         :type group: list[dict]
         """
@@ -200,7 +202,7 @@ class DockApplicator:
         main_win.addDockWidget(area, first_dock)
         first_dock.setVisible(True)
 
-        # Tabifier les docks suivants sur le premier
+        # Tabify following docks onto the first
         for entry in group[1:]:
             dock = entry["dock"]
             if not is_valid(dock):
@@ -210,20 +212,20 @@ class DockApplicator:
             main_win.tabifyDockWidget(first_dock, dock)
             dock.setVisible(True)
 
-        # Mettre le premier dock au premier plan
+        # Bring first dock to the foreground
         first_dock.raise_()
 
     # ─────────────────────────────────────────────
-    # RECHERCHE
+    # SEARCH
     # ─────────────────────────────────────────────
 
     def _find(self, name: str):
         """
-        Cherche un :class:`QDockWidget` par son nom dans le registre.
+        Search for a :class:`QDockWidget` by name in the registry.
 
-        :param name: Nom (``objectName``) du dock à trouver.
+        :param name: Name (``objectName``) of the dock to find.
         :type name: str
-        :return: Instance du dock, ou ``None`` si introuvable.
+        :return: Dock instance, or ``None`` if not found.
         :rtype: QDockWidget or None
         """
         for plugin_data in self.discovery.registry.values():

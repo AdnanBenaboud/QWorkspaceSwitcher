@@ -1,18 +1,18 @@
 # coding: utf-8
 
 """
-Module d'application de la configuration des barres d'outils (toolbars).
+Toolbar configuration applicator module.
 
-Ce module fournit la classe :class:`ToolbarApplicator`, responsable de
-positionner et afficher les :class:`QToolBar` selon la configuration
-d'une perspective.
+This module provides the :class:`ToolbarApplicator` class, responsible for
+positioning and displaying :class:`QToolBar` according to the
+workspace configuration.
 
-**Toolbars exclues** (jamais repositionnées) :
+**Excluded toolbars** (never repositioned):
 
-- ``PerspectiveManagerToolbar`` — toolbar du plugin lui-même.
-- ``QToolBar`` — widgets sans nom valide.
+- ``QWorkspaceSwitcherToolbar`` — the plugin's own toolbar.
+- ``QToolBar`` — widgets without a valid name.
 
-**Toolbars liées** (gérées automatiquement par leur dock via signal Qt) :
+**Linked toolbars** (managed automatically by their dock via Qt signal):
 
 - ``mBrowserToolbar``
 - ``mAdvancedDigitizeToolBar``
@@ -20,11 +20,11 @@ d'une perspective.
 - ``mBookmarkToolbar``
 - ``processingToolbar``
 
-**Gestion des lignes :**
+**Line management:**
 
-Les toolbars sont organisées par zone (``top``, ``bottom``, ``left``,
-``right``) et par numéro de ligne. Un ``insertToolBarBreak`` est inséré
-avant la première toolbar de chaque ligne > 1.
+Toolbars are organized by area (``top``, ``bottom``, ``left``,
+``right``) and by line number. An ``insertToolBarBreak`` is inserted
+before the first toolbar of each line > 1.
 
 :author: Adnan Benaboud — CNR
 """
@@ -36,13 +36,13 @@ from qgis.utils import iface
 from ..core.plugin_discovery import is_valid
 
 
-#: Toolbars jamais repositionnées par le plugin.
+#: Toolbars never repositioned by the plugin.
 EXCLUDED_TOOLBARS = {
-    "PerspectiveManagerToolbar",
+    "QWorkspaceSwitcherToolbar",
     "QToolBar",
 }
 
-#: Toolbars liées à un dock — leur visibilité suit celle du dock via signal Qt.
+#: Toolbars linked to a dock — visibility follows the dock via Qt signal.
 LINKED_TOOLBARS = {
     "mBrowserToolbar",
     "mAdvancedDigitizeToolBar",
@@ -54,14 +54,13 @@ LINKED_TOOLBARS = {
 
 class ToolbarApplicator:
     """
-    Applique la configuration des barres d'outils sur l'interface QGIS.
+    Apply toolbar configuration to the QGIS interface.
 
-    Positionne les :class:`QToolBar` dans les zones de la fenêtre
-    principale en respectant l'ordre des lignes. La toolbar
-    ``PerspectiveManagerToolbar`` est préservée à sa position actuelle
-    lors de chaque application.
+    Positions :class:`QToolBar` in the main window areas
+    respecting the line order. The ``QWorkspaceSwitcherToolbar``
+    is preserved at its current position on each application.
 
-    :exemple:
+    :example:
 
     .. code-block:: python
 
@@ -74,7 +73,7 @@ class ToolbarApplicator:
         })
     """
 
-    #: Correspondance chaîne → constante Qt de zone toolbar.
+    #: String → Qt toolbar area constant mapping.
     AREA_MAP = {
         "top":    Qt.TopToolBarArea,
         "bottom": Qt.BottomToolBarArea,
@@ -84,26 +83,25 @@ class ToolbarApplicator:
 
     def __init__(self, discovery):
         """
-        Initialise l'applicateur avec le registre de découverte.
+        Initialize the applicator with the discovery registry.
 
-        :param discovery: Instance de découverte des plugins QGIS.
+        :param discovery: QGIS plugin discovery instance.
         :type discovery: PluginDiscovery
         """
         self.discovery = discovery
 
     def apply(self, plugin_name: str, toolbars_config: list):
         """
-        Cache les toolbars non visibles d'un plugin.
+        Hide non-visible toolbars of a plugin.
 
-        Ne repositionne pas les toolbars — utilisé uniquement pour
-        masquer les toolbars dont ``visible`` est ``False``.
-        Ignore les toolbars de :data:`EXCLUDED_TOOLBARS` et
+        Does not reposition toolbars — used only to hide toolbars
+        whose ``visible`` is ``False``.
+        Ignores toolbars from :data:`EXCLUDED_TOOLBARS` and
         :data:`LINKED_TOOLBARS`.
 
-        :param plugin_name: Nom du plugin propriétaire des toolbars.
+        :param plugin_name: Name of the plugin owning the toolbars.
         :type plugin_name: str
-        :param toolbars_config: Liste des configurations de toolbars,
-            chacune sous la forme
+        :param toolbars_config: List of toolbar configurations, each as
             ``{"name": str, "visible": bool, "area": str, "line": int}``.
         :type toolbars_config: list[dict]
         """
@@ -123,36 +121,36 @@ class ToolbarApplicator:
 
     def apply_all(self, all_toolbars_by_plugin: dict):
         """
-        Repositionne toutes les toolbars visibles selon leur zone et ligne.
+        Reposition all visible toolbars according to their area and line.
 
-        Effectue dans l'ordre :
+        Performs in order:
 
-        1. Sauvegarde la position de ``PerspectiveManagerToolbar``.
-        2. Collecte les toolbars visibles groupées par zone et ligne.
-        3. Retire toutes ces toolbars de la fenêtre principale.
-        4. Les replace dans le bon ordre avec les sauts de ligne.
-        5. Restaure ``PerspectiveManagerToolbar`` à sa position sauvegardée.
+        1. Save the position of ``QWorkspaceSwitcherToolbar``.
+        2. Collect visible toolbars grouped by area and line.
+        3. Remove all these toolbars from the main window.
+        4. Replace them in the correct order with line breaks.
+        5. Restore ``QWorkspaceSwitcherToolbar`` to its saved position.
 
-        Les toolbars de :data:`EXCLUDED_TOOLBARS` et :data:`LINKED_TOOLBARS`
-        sont ignorées.
+        Toolbars from :data:`EXCLUDED_TOOLBARS` and :data:`LINKED_TOOLBARS`
+        are ignored.
 
-        :param all_toolbars_by_plugin: Dictionnaire
+        :param all_toolbars_by_plugin: Dictionary
             ``{plugin_name: [toolbar_config, ...]}``.
         :type all_toolbars_by_plugin: dict[str, list[dict]]
 
-        :exemple:
+        :example:
 
         .. code-block:: python
 
             applicator.apply_all({
                 "__qgis_native__": [
-                    {"name": "mMapNavToolBar",  "visible": True,
+                    {"name": "mMapNavToolBar",   "visible": True,
                      "area": "top", "line": 1},
                     {"name": "mDigitizeToolBar", "visible": True,
                      "area": "top", "line": 2},
                 ],
                 "georelai": [
-                    {"name": "GeorelaiToolbar", "visible": True,
+                    {"name": "GeorelaiToolbar",  "visible": True,
                      "area": "top", "line": 3},
                 ]
             })
@@ -160,7 +158,7 @@ class ToolbarApplicator:
         main_win   = iface.mainWindow()
         area_lines = {}
 
-        # Collecter les toolbars visibles groupées par zone et ligne
+        # Collect visible toolbars grouped by area and line
         for plugin_name, toolbars_config in all_toolbars_by_plugin.items():
             for tb_cfg in toolbars_config:
 
@@ -188,16 +186,16 @@ class ToolbarApplicator:
                     "config":  tb_cfg,
                 })
 
-        # Sauvegarder la position de PerspectiveManagerToolbar
+        # Save position of QWorkspaceSwitcherToolbar
         pm_toolbar = None
         pm_area    = Qt.TopToolBarArea
         for tb in main_win.findChildren(QToolBar):
-            if tb.objectName() == "PerspectiveManagerToolbar":
+            if tb.objectName() == "QWorkspaceSwitcherToolbar":
                 pm_toolbar = tb
                 pm_area    = main_win.toolBarArea(tb)
                 break
 
-        # Retirer toutes les toolbars à repositionner
+        # Remove all toolbars to be repositioned
         all_toolbars = set()
         for area_data in area_lines.values():
             for line_data in area_data.values():
@@ -208,7 +206,7 @@ class ToolbarApplicator:
             if is_valid(tb):
                 main_win.removeToolBar(tb)
 
-        # Replacer dans le bon ordre par zone et ligne
+        # Replace in correct order by area and line
         for area_str, lines in area_lines.items():
             area = self.AREA_MAP.get(area_str, Qt.TopToolBarArea)
             for line_num in sorted(lines.keys()):
@@ -218,24 +216,24 @@ class ToolbarApplicator:
                     if not is_valid(toolbar):
                         continue
                     main_win.addToolBar(area, toolbar)
-                    # Insérer un saut de ligne avant la première
-                    # toolbar de chaque ligne > 1
+                    # Insert line break before first toolbar
+                    # of each line > 1
                     if idx == 0 and line_num > 1:
                         main_win.insertToolBarBreak(toolbar)
                     toolbar.setVisible(True)
 
-        # Restaurer PerspectiveManagerToolbar à sa position sauvegardée
+        # Restore QWorkspaceSwitcherToolbar to its saved position
         if pm_toolbar and is_valid(pm_toolbar):
             main_win.addToolBar(pm_area, pm_toolbar)
             pm_toolbar.setVisible(True)
 
     def _find(self, name: str):
         """
-        Cherche une :class:`QToolBar` par son nom dans le registre.
+        Search for a :class:`QToolBar` by name in the registry.
 
-        :param name: Nom (``objectName``) de la toolbar à trouver.
+        :param name: Name (``objectName``) of the toolbar to find.
         :type name: str
-        :return: Instance de la toolbar, ou ``None`` si introuvable.
+        :return: Toolbar instance, or ``None`` if not found.
         :rtype: QToolBar or None
         """
         for plugin_data in self.discovery.registry.values():
