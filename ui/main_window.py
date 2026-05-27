@@ -1,7 +1,7 @@
 # coding: utf-8
 
 """
-Main interface module of the QWorkspace Switcher plugin.
+Main interface module of the QWorkspaceSwitcher plugin.
 
 This module provides the :class:`MainWindow` class, a Qt dialog
 allowing the user to create, modify, delete and apply
@@ -68,7 +68,7 @@ HIDDEN_TOOLBARS = {
 
 class MainWindow(QDialog, FORM_CLASS):
     """
-    Main interface of the QWorkspace Switcher plugin.
+    Main interface of the QWorkspaceSwitcher plugin.
 
     Allows creating, modifying, deleting, duplicating and applying
     QGIS workspaces. Loads the ``.ui`` file via
@@ -103,16 +103,16 @@ class MainWindow(QDialog, FORM_CLASS):
         """
         super().__init__(parent)
         self.setupUi(self)
-        self.setWindowTitle("QWorkspace Switcher")
+        self.setWindowTitle("QWorkspaceSwitcher")
         self.engine             = engine
         self._current_icon_path = ""
 
         # Connect Configuration signals for title indicator
         self.engine.config_io._cfg.sgl_unsaved.connect(
-            lambda: self.setWindowTitle("QWorkspace Switcher *")
+            lambda: self.setWindowTitle("QWorkspaceSwitcher *")
         )
         self.engine.config_io._cfg.sgl_saved.connect(
-            lambda: self.setWindowTitle("QWorkspace Switcher")
+            lambda: self.setWindowTitle("QWorkspaceSwitcher")
         )
 
         # Build dynamic widgets before _set_editor_visible

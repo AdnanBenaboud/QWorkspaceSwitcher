@@ -1,218 +1,342 @@
 # coding: utf-8
 
-# Imports généraux WinPython
+"""
+Module de gestion de configurations en cascade.
+
+Ce module fournit la classe :class:`Configuration`, adaptée du code CNR
+pour le plugin Gestionnaire de Perspectives. Elle permet de fusionner
+plusieurs sources de configuration (fichiers JSON, dictionnaires) par ordre
+de priorité croissante, et d'émettre des signaux Qt lors des modifications
+ou sauvegardes.
+
+**Architecture en cascade :**
+
+.. code-block:: text
+
+    CONFIG_DEFAULT          (priorité la plus faible)
+        ↓
+    plugin_a.psp.json
+        ↓
+    plugin_b.psp.json
+        ↓
+    user.psp.json           (priorité la plus haute)
+        ↓
+    self.cfg                (dictionnaire fusionné en mémoire)
+
+.. note::
+    Adapté du code CNR (PBa@CNR, 2024-2026).
+    Licence : BSD-2-Clause — https://opensource.org/license/BSD-2-Clause
+
+:author: PBa@CNR (original), adapté pour GéoRelai
+:license: BSD-2-Clause
+"""
+
+import os
+import json
 import copy
-from typing import Any
-from PyQt5.QtCore import QObject, pyqtSignal
 
-# Imports spécifiques
-from trace_back import trace_except
-from utils import abs_path, get_lst, fic_load, fic_save, dic_deep_update
-
-"""
-Classe de gestion de configurations.
-- Permet de faire le lien entre fichiers de sauvegarde et un dictionnaire utilisable dans le code.
-- Supporte des sources de configuration en cascade.
-- Envoie des signaux en cas de sauvegarde et en cas de modif de la config (afin de pouvoir gérer un indicateur de modif).
-Copyright: 2024 2026, PBa@CNR
-Licence: BSD-2-Clause, https://opensource.org/license/BSD-2-Clause
-"""
+from qgis.PyQt.QtCore import QObject, pyqtSignal
 
 
 class Configuration(QObject):
-    """ Gestionnaire de configuration, sous la forme d'un dictionnaire.
     """
-    # Variables de classe: signaux personnalisés
-    sgl_saved = pyqtSignal()                    # Signal configuration sauvegardée
-    sgl_unsaved = pyqtSignal()                  # Signal configuration modifiée non sauvegardée
+    Gestionnaire de configuration sous forme de dictionnaire fusionné.
 
-    @trace_except
-    def __init__(self, lst_cfg: list | str = None, fic_sav: str = 'user.json') -> None:
-        """ Initialiser l'instance.
-        :param lst_cfg: liste des sources de configuration, du moins spécifique au plus spécifique (dict ou json)
-        :param fic_sav: fichier json pour sauvegarder la configuration utilisateur
+    Hérite de :class:`QObject` pour supporter les signaux Qt.
+    Permet de charger plusieurs sources de configuration par ordre
+    de priorité croissante et de les fusionner récursivement.
+
+    **Signaux :**
+
+    - :attr:`sgl_saved` — émis après une sauvegarde réussie.
+    - :attr:`sgl_unsaved` — émis quand la configuration est modifiée
+      sans avoir été sauvegardée.
+
+    :exemple:
+
+    .. code-block:: python
+
+        cfg = Configuration(
+            lst_cfg=[{"perspectives": []}, "user.psp.json"],
+            fic_sav="user.psp.json"
+        )
+        cfg["perspectives"] = [{"name": "Test"}]  # émet sgl_unsaved
+        cfg.save(diff=False)                       # émet sgl_saved
+    """
+
+    sgl_saved   = pyqtSignal()
+    """Signal émis après une sauvegarde réussie du fichier."""
+
+    sgl_unsaved = pyqtSignal()
+    """Signal émis quand la configuration est modifiée sans sauvegarde."""
+
+    def __init__(self, lst_cfg=None, fic_sav: str = 'user.json') -> None:
         """
-        # Construire la classe mère
-        super().__init__()                      # Classe mère QObject pour les signaux
+        Initialise l'instance et fusionne les sources de configuration.
 
-        # Déclarer les variables membres de l'instance
-        self.cfg = {}                           # Dictionnaire contenant la configuration
-        self.cfg_statique = {}                  # Configuration hors celle correspondant au fichier de sauvegarde
-        self.fic_sav = abs_path(fic_sav)        # Fichier json pour sauvegarder la configuration
+        Les sources sont traitées dans l'ordre de la liste — la dernière
+        source est la plus dominante (priorité maximale).
 
-        # Récupérer la configuration d'après les sources
+        :param lst_cfg: Liste des sources de configuration. Chaque élément
+            peut être un :class:`dict` ou un chemin vers un fichier JSON.
+            Si ``None``, initialise avec une configuration vide.
+        :type lst_cfg: list or None
+        :param fic_sav: Chemin vers le fichier JSON de sauvegarde utilisateur.
+        :type fic_sav: str
+        """
+        super().__init__()
+
+        self.cfg          = {}
+        self.cfg_statique = {}
+        self.fic_sav      = os.path.normpath(fic_sav)
+
         if lst_cfg is None:
-            lst_cfg = [{}]                      # Configuration vide, par défaut
-        for cfg in get_lst(lst_cfg):
-            self.add_cfg(cfg)                   # Du moins spécifique au plus spécifique
+            lst_cfg = [{}]
 
-    @trace_except
-    def __setitem__(self, key: Any, value: Any) -> None:
-        """ Ajouter ou modifier une valeur de configuration via l'opérateur []; émettre un signal unsaved (si modifiée).
-        :param key: clé de configuration
-        :param value: valeur de configuration
+        for cfg in (lst_cfg if isinstance(lst_cfg, list) else [lst_cfg]):
+            self.add_cfg(cfg)
+
+    def __setitem__(self, key, value) -> None:
+        """
+        Modifie ou ajoute une valeur dans la configuration via l'opérateur ``[]``.
+
+        Émet :attr:`sgl_unsaved` si la valeur est différente de l'existante.
+
+        :param key: Clé de configuration.
+        :param value: Nouvelle valeur.
+
+        :exemple:
+
+        .. code-block:: python
+
+            cfg["show_menu_bar"] = False  # émet sgl_unsaved
         """
         if self.__getitem__(key) != value:
             self.cfg[key] = value
-            self.sgl_unsaved.emit()             # Émettre le signal
+            self.sgl_unsaved.emit()
 
-    @trace_except
-    def __getitem__(self, key: Any) -> Any:
-        """ Renvoyer une valeur de configuration via l'opérateur [].
-        :param key: clé de configuration
-        :return: valeur correspondant à la clé, ou None
+    def __getitem__(self, key):
         """
-        return self.cfg.get(key)                # None si pas de correspondance
+        Retourne une valeur de configuration via l'opérateur ``[]``.
 
-    @trace_except
-    def get(self, key: Any, dft_val=None) -> Any:
-        """ Renvoyer une valeur de configuration via l'opérateur get.
-        :param key: clé de configuration
-        :param dft_val: valeur par défaut, si la clé n'existe pas
-        :return: valeur correspondant à la clé, ou None
+        :param key: Clé de configuration.
+        :return: Valeur associée à la clé, ou ``None`` si absente.
+
+        :exemple:
+
+        .. code-block:: python
+
+            perspectives = cfg["perspectives"]
         """
-        return self.cfg.get(key, dft_val)       # dft_val si pas de correspondance
+        return self.cfg.get(key)
 
-    @trace_except
-    def __contains__(self, key: Any) -> bool:
-        """ Vérifier si une clé est contenue dans la configuration via l'opérateur in.
-        :param key: clé de configuration
-        :return: True si contenue, False sinon
+    def get(self, key, dft_val=None):
+        """
+        Retourne une valeur de configuration avec valeur par défaut.
+
+        :param key: Clé de configuration.
+        :param dft_val: Valeur retournée si la clé est absente.
+        :return: Valeur associée à la clé, ou ``dft_val`` si absente.
+        :rtype: any
+
+        :exemple:
+
+        .. code-block:: python
+
+            perspectives = cfg.get("perspectives", [])
+        """
+        return self.cfg.get(key, dft_val)
+
+    def __contains__(self, key) -> bool:
+        """
+        Vérifie si une clé est présente dans la configuration via ``in``.
+
+        :param key: Clé à vérifier.
+        :return: ``True`` si la clé existe, ``False`` sinon.
+        :rtype: bool
+
+        :exemple:
+
+        .. code-block:: python
+
+            if "perspectives" in cfg:
+                ...
         """
         return key in self.cfg
 
-    @trace_except
     def set_fic_sav(self, fic_sav: str) -> None:
-        """ Fournir ou modifier le fichier de sauvegarde de la configuration.
-        :param fic_sav: fichier json pour sauvegarder la configuration
         """
-        self.fic_sav = abs_path(fic_sav)        # Fichier json pour sauvegarder la configuration
+        Modifie le fichier de sauvegarde utilisateur.
 
-    @trace_except
-    def add_cfg(self, itm: str | dict, dominante: bool = True) -> None:
-        """ Ajouter un élément dans la configuration.
-        :param itm: fichier contenant un dictionnaire ou dictionnaire
-        :param dominante: indique si la nouvelle configuration est prioritaire sur la préexistante
-        :return: mise à jour de self.cfg
+        :param fic_sav: Nouveau chemin vers le fichier JSON de sauvegarde.
+        :type fic_sav: str
         """
-        # Récupérer le nouvel élément de configuration
-        cfg = None
-        if itm is None:                         # Si itm n'est pas défini, alors on ne peut rien faire
-            pass
-        elif isinstance(itm, str):              # Cas d'une chaine: nom d'un fichier json contenant un dict de cfg
-            itm = abs_path(itm)
-            cfg = fic_load(itm, default={})
-        elif isinstance(itm, dict):             # Cas d'un dict de cfg
-            cfg = itm
+        self.fic_sav = os.path.normpath(fic_sav)
+
+    def add_cfg(self, itm, dominante: bool = True) -> None:
+        """
+        Ajoute et fusionne une source de configuration.
+
+        La source peut être un dictionnaire ou un chemin vers un fichier JSON.
+        Les clés de valeur ``None`` sont ignorées.
+
+        :param itm: Source de configuration — chemin JSON ou dictionnaire.
+        :type itm: str or dict or None
+        :param dominante: Si ``True``, la nouvelle source est prioritaire
+            sur la configuration existante. Si ``False``, elle sert de
+            complément sans écraser les valeurs existantes.
+        :type dominante: bool
+
+        :exemple:
+
+        .. code-block:: python
+
+            cfg.add_cfg({"show_menu_bar": True})
+            cfg.add_cfg("georelai.psp.json", dominante=True)
+        """
+        new_cfg = None
+
+        if itm is None:
+            return
+
+        elif isinstance(itm, str):
+            itm = os.path.normpath(itm)
+            try:
+                with open(itm, 'r', encoding='utf-8') as f:
+                    new_cfg = json.load(f) or {}
+            except FileNotFoundError:
+                new_cfg = {}
+            except Exception as e:
+                print(f"[Configuration] Erreur lecture {itm} : {e}")
+                new_cfg = {}
+
+        elif isinstance(itm, dict):
+            new_cfg = itm
+
+        if new_cfg is None:
+            return
 
         # Supprimer les clés de valeur None
-        if cfg is not None:
-            cfg = {k: v for k, v in cfg.items() if v is not None}
+        new_cfg = {k: v for k, v in new_cfg.items() if v is not None}
 
-        # Compléter la configuration connue avec ce nouvel élément
+        # Fusionner selon la priorité
         if dominante:
-            self.cfg = dic_deep_update(         # Compléter self.cfg avec nouvelle cfg dominante
-                dic_dft=self.cfg, dic_dom=cfg)
+            self.cfg = self._deep_update(dic_dft=self.cfg, dic_dom=new_cfg)
         else:
-            self.cfg = dic_deep_update(         # Compléter self.cfg avec nouvelle cfg complémentaire
-                dic_dft=cfg, dic_dom=self.cfg)
+            self.cfg = self._deep_update(dic_dft=new_cfg, dic_dom=self.cfg)
 
-        # Conserver une trace de la cfg statique, i.e. hors celle correspondant au fichier de sauvegarde
-        # Note: cela n'est pertinent que si celle du fichier de sauvegarde est dominante, i.e. ajoutée en dernier
-        if itm != self.fic_sav:
+        # Mettre à jour la config statique (référence pour le diff)
+        # Ne pas mettre à jour si c'est le fichier de sauvegarde utilisateur
+        if isinstance(itm, str) and itm != self.fic_sav:
+            self.cfg_statique = copy.deepcopy(self.cfg)
+        elif isinstance(itm, dict):
             self.cfg_statique = copy.deepcopy(self.cfg)
 
-    @trace_except
     def save(self, diff: bool = True) -> None:
-        """ Sauvegarder la configuration sous la forme d'un fichier; émettre un signal saved.
-        :param diff: True pour ne sauvegarder que les différences par rapport à la cfg statique; False pour tout prendre
         """
-        # Dictionnaire à sauvegarder
-        if diff:
-            # Extraire la cfg spécifique, i.e. hors celle statique
-            cfg_sav = self._diff(self.cfg, self.cfg_statique)
-        else:
-            # Sauvegarder toute la cfg
-            cfg_sav = self.cfg
+        Sauvegarde la configuration dans :attr:`fic_sav`.
 
-        # Sauvegarder la configuration utilisateur et avertir
-        fic_save(self.fic_sav, data=cfg_sav)
-        self.sgl_saved.emit()                   # Émettre le signal
+        :param diff: Si ``True``, ne sauvegarde que les différences par rapport
+            à :attr:`cfg_statique` (config sans les modifications utilisateur).
+            Si ``False``, sauvegarde toute la configuration.
+        :type diff: bool
 
-    @trace_except
-    def _diff(self, itm: object, itm_ref: object) -> object:
-        """ Comparer résursivement des objets de type dict, list, variables simples et sortir leurs différences.
-        :param itm: objet à analyser (sa config devrait être la plus complète)
-        :param itm_ref: objet de référence (sa config devrait être moins étendue)
-        :return: dictionnaire ou autre objet contenant les écarts constatés
+        :raises OSError: Si le fichier ne peut pas être écrit.
+
+        :exemple:
+
+        .. code-block:: python
+
+            cfg.save(diff=True)   # sauvegarde seulement les overrides
+            cfg.save(diff=False)  # sauvegarde tout
+        """
+        cfg_sav = self._diff(self.cfg, self.cfg_statique) if diff else self.cfg
+
+        try:
+            os.makedirs(os.path.dirname(self.fic_sav), exist_ok=True)
+            with open(self.fic_sav, 'w', encoding='utf-8') as f:
+                json.dump(cfg_sav, f, ensure_ascii=False, indent=2)
+            self.sgl_saved.emit()
+        except Exception as e:
+            print(f"[Configuration] Erreur sauvegarde : {e}")
+
+    def _deep_update(self, dic_dft: dict, dic_dom: dict) -> dict:
+        """
+        Fusionne récursivement deux dictionnaires.
+
+        Les valeurs de ``dic_dom`` sont prioritaires sur celles de ``dic_dft``.
+        Les sous-dictionnaires sont fusionnés récursivement.
+        Les listes sont écrasées (non fusionnées).
+
+        :param dic_dft: Dictionnaire de base (priorité faible).
+        :type dic_dft: dict
+        :param dic_dom: Dictionnaire dominant (priorité haute).
+        :type dic_dom: dict
+        :return: Nouveau dictionnaire fusionné.
+        :rtype: dict
+
+        :exemple:
+
+        .. code-block:: python
+
+            a = {"x": 1, "sub": {"a": 1, "b": 2}}
+            b = {"x": 2, "sub": {"b": 3, "c": 4}}
+            result = cfg._deep_update(a, b)
+            # → {"x": 2, "sub": {"a": 1, "b": 3, "c": 4}}
+        """
+        if not isinstance(dic_dom, dict):
+            return dic_dft
+        if not isinstance(dic_dft, dict):
+            return dic_dom
+
+        d = copy.copy(dic_dft)
+        for k, v in dic_dom.items():
+            if isinstance(v, dict):
+                d[k] = self._deep_update(d.get(k, {}), v)
+            else:
+                d[k] = v
+        return d
+
+    def _diff(self, itm, itm_ref) -> object:
+        """
+        Compare récursivement deux objets et retourne leurs différences.
+
+        Utilisé par :meth:`save` avec ``diff=True`` pour ne sauvegarder
+        que les modifications par rapport à la configuration statique.
+
+        :param itm: Objet courant (configuration modifiée).
+        :param itm_ref: Objet de référence (configuration statique).
+        :return: Différences entre ``itm`` et ``itm_ref``, ou ``None``
+            si les objets sont identiques.
+
+        :exemple:
+
+        .. code-block:: python
+
+            base     = {"a": 1, "b": {"c": 2, "d": 3}}
+            modified = {"a": 1, "b": {"c": 99, "d": 3}}
+            diff = cfg._diff(modified, base)
+            # → {"b": {"c": 99}}
         """
         if isinstance(itm, list) and isinstance(itm_ref, list):
-            # Cas de listes
             return itm
 
         elif isinstance(itm, dict) and isinstance(itm_ref, dict):
-            # Cas de dictionnaires
             diff = {}
             for k, v in itm.items():
                 if k not in itm_ref:
                     diff[k] = v
                 elif v != itm_ref[k]:
-                    diff[k] = self._diff(v, itm_ref[k])
+                    result = self._diff(v, itm_ref[k])
+                    if result is not None:
+                        diff[k] = result
             return diff
 
         elif type(itm) is not type(itm_ref):
-            # Cas d'objets de types différents portant le même nom
             return itm
 
         elif itm != itm_ref:
-            # Cas d'objets différents portant le même nom
             return itm
 
         else:
-            # On devrait être dans le cas d'objets de type simple identiques
             return None
-
-
-if __name__ == '__main__':
-    # Tests unitaires des fonctionnalités
-    pass
-    # from datetime import timedelta
-    # CFG_DFT = {                                 # Exemple de cfg applicative par défaut
-    #     'is_maximized': False,                  # Exemple bool
-    #     'nbr_run': 0,                           # Exemple int
-    #     'dur_sce': 3600.0,                      # Exemple float
-    #     #'pdt_ench': timedelta(seconds=300.),    # Exemple autre type, ici timedelta -> non sérialisable en json
-    #     'rep_etu': None,                        # Exemple None
-    #     'fic_etu': None,
-    #     'nom_sce': None,
-    #     'nom_run': "R0000-00-00-00h00m00s",     # Exemple str
-    #     'lst_nom_courbe': []                    # Exemple list
-    # }
-    #
-    # # Exemple d'une configuration avec valeurs par défaut CFG_DFT et valeurs de l'utilisateur
-    # # Il peut y avoir plusieurs étages: CFG_DFT < 'cfg_appli.json' < 'user.json'
-    # fic_sav = r'fic_user.json'
-    # cfg_ = Configuration([CFG_DFT, fic_sav], fic_sav=fic_sav)   # Configuration fusionnée
-    # dur_sce = cfg_['dur_sce']                   # Exemple de récupération depuis la cfg
-    # cfg_['nom_sce'] = 'Sc_BY'                   # Exemple de mémorisation dans la cfg
-    # cfg_.save(diff=False)                       # Sauvegarde de la config utilisateur (clés spécifiques uniquement)
-
-    # # Test pour la création d'une configuration des Perspectives
-    # import glob                                 # Package pour la recherche de fichiers selon un pattern
-    #
-    # # Définition des paramètres
-    # CFG_DFT = {                                 # Cfg applicative par défaut, pour ne pas planter à la recherche d'une clé particulière
-    #     'lst_perspective': [
-    #         {'name': None, 'dic_plugin': {}, 'button_style': 'text', 'icon': None, 'dic_menu': {}}
-    #     ]
-    # }
-    # fic_psp_user = r'user.psp.json'             # Fichier de configuration locale (mémoire du plugin Perspective)
-    # fic_psp = r'../*/*.psp.json'                # Pattern pour les fichiers applicatifs de configuration des plugins applicatifs
-    #
-    # # Création de l'objet de configuration
-    # cfg = Configuration(lst_cfg=[CFG_DFT], fic_sav=fic_psp_user)    # cfg ou self.cfg dans une classe
-    # for fic in glob.glob(fic_psp, recursive=True):
-    #     print(fic)
-    #     cfg.add_cfg(fic)                        # Ajouter les configurations des plugins applicatifs, si elles existent
-    # cfg.add_cfg(fic_psp_user, dominante=True)   # Ajouter la configuration locale, dominante
-    # cfg.save(diff=False)                        # Sauvegarder l'ensemble de la configuration (diff=True pour n'avoir que les différences)

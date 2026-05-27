@@ -33,5 +33,5 @@ def classFactory(iface):  # pylint: disable=invalid-name
     :type iface: QgsInterface
     """
     #
-    from .perspective_manager import PerspectiveManager
-    return PerspectiveManager(iface)
+    from .qworkspace_switcher import QWorkspaceSwitcher
+    return QWorkspaceSwitcher(iface)

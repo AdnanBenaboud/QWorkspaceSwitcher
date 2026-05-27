@@ -40,7 +40,7 @@ from .core.plugin_discovery import is_valid
 from .ui.main_window import MainWindow
 
 
-class PerspectiveManager:
+class QWorkspaceSwitcher:
     """
     Entry point of the QWorkspace Switcher QGIS plugin.
 

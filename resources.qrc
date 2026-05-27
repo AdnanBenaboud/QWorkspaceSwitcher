@@ -1,5 +1,0 @@
-<RCC>
-    <qresource prefix="/plugins/perspective_manager" >
-        <file>icon.png</file>
-    </qresource>
-</RCC>
