@@ -1,22 +1,11 @@
-# Python
 __pycache__/
 *.py[cod]
-*.pyo
-
-# QGIS generated files
 *.pyc
-ui_*.py
 resources_rc.py
-
-# OS
+resources.py
+resources.qrc
+ui_*.py
+perspectives/user.psp.json
 .DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-
-# Distribution
+__MACOSX/
 *.zip
-dist/
-build/
