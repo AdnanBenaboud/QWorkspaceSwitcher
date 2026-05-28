@@ -397,6 +397,7 @@ class MainWindow(QDialog, FORM_CLASS):
         except Exception:
             pass
 
+        self.treeToolbars.blockSignals(True)  # ← bloquer avant tout
         self.treeToolbars.clear()
         self.treeToolbars.setColumnCount(2)
         self.treeToolbars.setHeaderLabels(["Name", "Line"])
@@ -437,13 +438,45 @@ class MainWindow(QDialog, FORM_CLASS):
             for tb_info in visible_toolbars:
                 saved = saved_toolbars.get(tb_info["name"], {})
                 line  = saved.get("line", tb_info.get("line", 1))
-                self._add_toolbar_item(
-                    plugin_item, tb_info, saved_line=line
-                )
 
-        self.treeToolbars.itemChanged.connect(
-            self._on_toolbar_item_changed
-        )
+                child = QTreeWidgetItem(plugin_item)
+                child.setText(0, tb_info["label"])
+                child.setData(0, Qt.UserRole, tb_info["name"])
+                child.setData(1, Qt.UserRole, "toolbar")
+
+                spinbox = QSpinBox()
+                spinbox.setMinimum(1)
+                spinbox.setMaximum(5)
+                spinbox.setValue(line)
+                spinbox.setToolTip("Line in toolbar area")
+                self.treeToolbars.setItemWidget(child, 1, spinbox)
+
+                child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
+
+                # ← Cocher directement selon visible dans saved
+                if perspective_data and saved:
+                    state = Qt.Checked if saved.get("visible", True) \
+                            else Qt.Unchecked
+                else:
+                    # Pas de données → utiliser l'état actuel de la toolbar
+                    state = Qt.Checked if tb_info.get("visible", False) \
+                            else Qt.Unchecked
+                child.setCheckState(0, state)
+
+            # Mettre à jour la checkbox parent
+            checked_count = sum(
+                1 for j in range(plugin_item.childCount())
+                if plugin_item.child(j).checkState(0) == Qt.Checked
+            )
+            if checked_count == 0:
+                plugin_item.setCheckState(0, Qt.Unchecked)
+            elif checked_count == plugin_item.childCount():
+                plugin_item.setCheckState(0, Qt.Checked)
+            else:
+                plugin_item.setCheckState(0, Qt.PartiallyChecked)
+
+        self.treeToolbars.blockSignals(False)
+        self.treeToolbars.itemChanged.connect(self._on_toolbar_item_changed)
 
     def _populate_menus_tree(self):
         """
@@ -740,6 +773,8 @@ class MainWindow(QDialog, FORM_CLASS):
             pn for pn in plugin_names if registry[pn].get("docks")
         ]
         for i in range(self.treeDocks.topLevelItemCount()):
+            if i >= len(plugins_with_docks):  # ← protection
+                break
             plugin_item = self.treeDocks.topLevelItem(i)
             plugin_name = plugins_with_docks[i]
             plugin_data = data.get("plugins", {}).get(plugin_name, {})
@@ -762,40 +797,6 @@ class MainWindow(QDialog, FORM_CLASS):
                 else:
                     child.setCheckState(0, Qt.Unchecked)
         self.treeDocks.blockSignals(False)
-
-        # ── treeToolbars — check widgets ───────────
-        HIDDEN_TB = {
-            "QWorkspaceSwitcherToolbar", "QToolBar",
-            "mBrowserToolbar", "mAdvancedDigitizeToolBar",
-            "mGpsToolBar", "mBookmarkToolbar", "processingToolbar",
-        }
-        plugins_with_toolbars = [
-            pn for pn in plugin_names
-            if any(
-                t["name"] not in HIDDEN_TB and t["name"]
-                for t in registry[pn].get("toolbars", [])
-            )
-        ]
-
-        self.treeToolbars.blockSignals(True)
-        for i in range(self.treeToolbars.topLevelItemCount()):
-            plugin_item    = self.treeToolbars.topLevelItem(i)
-            plugin_name    = plugins_with_toolbars[i]
-            plugin_data    = data.get("plugins", {}).get(plugin_name, {})
-            saved_toolbars = {
-                t["name"]: t for t in plugin_data.get("toolbars", [])
-            }
-            for j in range(plugin_item.childCount()):
-                child       = plugin_item.child(j)
-                widget_name = child.data(0, Qt.UserRole)
-                saved       = saved_toolbars.get(widget_name)
-                if saved:
-                    state = Qt.Checked if saved.get("visible", True) \
-                            else Qt.Unchecked
-                    child.setCheckState(0, state)
-                else:
-                    child.setCheckState(0, Qt.Unchecked)
-        self.treeToolbars.blockSignals(False)
 
     # ─────────────────────────────────────────────
     # RESET TREE
